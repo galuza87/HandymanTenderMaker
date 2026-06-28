@@ -1,8 +1,11 @@
 import pyodbc
 import sys
+import os
+from dotenv import load_dotenv
 
-from config import MASTER_CONN_STR, DB_CONN_STR
-
+load_dotenv()
+DB_CONN_STR = os.getenv('DB_CONN_STR')
+MASTER_CONN_STR = os.getenv('MASTER_CONN_STR')
 
 def create_database():
     print("Connecting to SQL Server master database to check/create HandymanDB...")

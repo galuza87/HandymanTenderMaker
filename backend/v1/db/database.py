@@ -1,7 +1,9 @@
 import pyodbc
+from dotenv import load_dotenv
+import os
 
-from config import DB_CONN_STR
-
+load_dotenv()
+DB_CONN_STR = os.getenv('DB_CONN_STR')
 
 def get_db_connection():
     """

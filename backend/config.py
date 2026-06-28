@@ -13,41 +13,9 @@ DB_TRUST_SERVER_CERTIFICATE = os.getenv("DB_TRUST_SERVER_CERTIFICATE", "yes")
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
-# Build Database Connection Strings
-if DB_USER and DB_PASSWORD:
-    # SQL Server Authentication
-    DB_CONN_STR = (
-        f"DRIVER={DB_DRIVER};"
-        f"SERVER={DB_SERVER};"
-        f"DATABASE={DB_NAME};"
-        f"UID={DB_USER};"
-        f"PWD={DB_PASSWORD};"
-        f"TrustServerCertificate={DB_TRUST_SERVER_CERTIFICATE};"
-    )
-    MASTER_CONN_STR = (
-        f"DRIVER={DB_DRIVER};"
-        f"SERVER={DB_SERVER};"
-        f"DATABASE=master;"
-        f"UID={DB_USER};"
-        f"PWD={DB_PASSWORD};"
-        f"TrustServerCertificate={DB_TRUST_SERVER_CERTIFICATE};"
-    )
-else:
-    # Windows Authentication (Trusted Connection)
-    DB_CONN_STR = (
-        f"DRIVER={DB_DRIVER};"
-        f"SERVER={DB_SERVER};"
-        f"DATABASE={DB_NAME};"
-        f"Trusted_Connection={DB_TRUSTED_CONNECTION};"
-        f"TrustServerCertificate={DB_TRUST_SERVER_CERTIFICATE};"
-    )
-    MASTER_CONN_STR = (
-        f"DRIVER={DB_DRIVER};"
-        f"SERVER={DB_SERVER};"
-        f"DATABASE=master;"
-        f"Trusted_Connection={DB_TRUSTED_CONNECTION};"
-        f"TrustServerCertificate={DB_TRUST_SERVER_CERTIFICATE};"
-    )
+# Database Connection Strings
+DB_CONN_STR = os.getenv('DB_CONN_STR')
+MASTER_CONN_STR = os.getenv('MASTER_CONN_STR')
 
 # LM Studio Config
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1")

@@ -1,10 +1,14 @@
 import pyodbc
 import os
 
-from config import DB_CONN_STR as connection_string
+from dotenv import load_dotenv
 
+load_dotenv()
+DB_CONN_STR = os.getenv('DB_CONN_STR')
 
-def setup_client_tables():
+connection_string = DB_CONN_STR
+
+def setup_clients_table():
     print("Connecting to SQL Server to create Clients and Offer_requests tables...")
     try:
         conn = pyodbc.connect(connection_string, autocommit=True)
@@ -59,4 +63,4 @@ def setup_client_tables():
         print(f"Error creating tables: {e}")
 
 if __name__ == "__main__":
-    setup_client_tables()
+    setup_clients_table()

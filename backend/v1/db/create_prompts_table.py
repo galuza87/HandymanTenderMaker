@@ -1,7 +1,9 @@
 import pyodbc
+import os
+from dotenv import load_dotenv
 
-from config import DB_CONN_STR
-
+load_dotenv()
+DB_CONN_STR = os.getenv('DB_CONN_STR')
 
 def create_table():
     conn = pyodbc.connect(DB_CONN_STR)
