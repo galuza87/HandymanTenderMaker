@@ -55,6 +55,7 @@
 - `conftest.py`: contains the rooting information for the pytest
 - `test-sanity.py`: performs two sanity checks, to see that the source code runs from the command line
 - `test_api.py`: performs checks of the Rest endpoints
+- `fallback_engine.py`: added an implementation of fallback_collect_client_info()
 
 **Next for [Partner]:**
 - [ ] Are init.py indeed needed?
