@@ -34,6 +34,18 @@
 
 ---
 
+### 2026-06-29 — Yegor
+
+**What was done:**
+- Created ability to test with LangSmith
+
+**Files changed:**
+- `.env`: Added variables and credentials for LangSmith
+- `test_columns.py`: created naive test with LangSmith to check whether the agent saves all data
+
+**Next for [Partner]:**
+- [ ] Log in with the credentials from .env and try to improve the test.
+
 ### 2026-06-28 — Yegor
 
 **What was done:**

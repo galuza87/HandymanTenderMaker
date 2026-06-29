@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import os 
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # --- Internal imports             --- #
 from backend.v1.models import ChatRequest, ChatResponse, AgentState
 from backend.v1.engine import sessions
 from backend.v1.db.database import get_all_categories_with_subs, get_all_contractors, search_categories_and_subs, insert_prompt_log, save_client_and_offer
+api_key = os.getenv("LANGSMITH_API_KEY")
 
 # --- Harness algorithm version    --- #
 ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v1') # Get the active version or default to v1
