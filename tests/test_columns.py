@@ -35,40 +35,40 @@ engine = Engine()
 # Evaluators
 # ─────────────────────────────────────────────────────────────────
 
-def eval_offer_details_complete(state: AgentState) -> dict:
+def eval_offer_details_complete(collected_details: dict) -> dict:
     """Check if all offer_request columns collected by agent."""
-    required_for_offer = ["category", "subcategory", "deadline", "prompt_text"]
-    filled = all(state.collected_details.get(col) for col in required_for_offer)
-    missing = [col for col in required_for_offer if not state.collected_details.get(col)]
+    required_for_offer = ["major_category", "job_description", "timeframe"]
+    filled = all(collected_details.get(col) for col in required_for_offer)
+    missing = [col for col in required_for_offer if not collected_details.get(col)]
     
     return {
         "key": "offer_details_complete",
         "score": 1.0 if filled else 0.0,
-        "collected": state.collected_details,
+        "collected": collected_details,
         "missing": missing,
     }
 
 
-def eval_client_info_complete(state: AgentState) -> dict:
+def eval_client_info_complete(client_info: dict) -> dict:
     """Check if all client columns collected by agent."""
     required_for_client = ["name", "phone", "address"]
-    filled = all(state.client_info.get(col) for col in required_for_client)
-    missing = [col for col in required_for_client if not state.client_info.get(col)]
+    filled = all(client_info.get(col) for col in required_for_client)
+    missing = [col for col in required_for_client if not client_info.get(col)]
     
     return {
         "key": "client_info_complete",
         "score": 1.0 if filled else 0.0,
-        "collected": state.client_info,
+        "collected": client_info,
         "missing": missing,
     }
 
 
-def eval_task_selected(state: AgentState) -> dict:
+def eval_task_selected(selected_task: str) -> dict:
     """Check if task was selected."""
     return {
         "key": "task_selected",
-        "score": 1.0 if state.selected_task else 0.0,
-        "selected_task": state.selected_task,
+        "score": 1.0 if selected_task else 0.0,
+        "selected_task": selected_task,
     }
 
 
@@ -80,13 +80,36 @@ def run_test_conversation():
     """
     Simulate a multi-turn conversation:
     1. User selects handyman task
-    2. Agent collects job details (category, subcategory, deadline, job_description)
+    2. Agent collects job details (major_category, job_description, timeframe)
     3. Agent collects client info (name, phone, address)
     """
     
     session_id = "test_session_001"
     client_ip = "127.0.0.1"
     
+    # Mock save_client_and_offer to capture what gets written to the database
+    import backend.v1.db.database
+    import backend.v1.fallback_engine
+    
+    captured_data = {
+        "client_info": {},
+        "collected_details": {},
+        "selected_task": None
+    }
+    
+    def mock_save(client_info, offer_details, prompt_text):
+        captured_data["client_info"] = dict(client_info)
+        captured_data["collected_details"] = dict(offer_details)
+        return True
+        
+    backend.v1.db.database.save_client_and_offer = mock_save
+    backend.v1.fallback_engine.save_client_and_offer = mock_save
+    try:
+        import backend.v1.engine
+        backend.v1.engine.save_client_and_offer = mock_save
+    except ImportError:
+        pass
+
     # Initialize session
     sessions[session_id] = AgentState(messages=[], ip_address=client_ip)
     state = sessions[session_id]
@@ -98,10 +121,9 @@ def run_test_conversation():
     # Test messages (simulating user input)
     test_messages = [
         "Hi, I need help with a handyman job",
-        "Plumbing",  # Task selection
-        "Leak detection",  # Sub-category
+        "Plumbing",  # Task selection & major category
         "There's water dripping from under the sink in my kitchen bathroom",  # Job description
-        "2 weeks from today",  # Deadline
+        "2 weeks from today",  # Timeframe
         "John Doe",  # Name
         "555-0123",  # Phone
         "123 Oak Street, Vienna, Austria",  # Address
@@ -119,6 +141,10 @@ def run_test_conversation():
         state = engine.process(state)
         sessions[session_id] = state
         
+        # Capture selected_task if set
+        if state.selected_task:
+            captured_data["selected_task"] = state.selected_task
+
         # Print agent response
         if state.messages:
             last_msg = state.messages[-1]
@@ -136,7 +162,7 @@ def run_test_conversation():
         if state.client_info:
             print(f"  → Client info: {state.client_info}")
     
-    return state
+    return captured_data["selected_task"], captured_data["collected_details"], captured_data["client_info"]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -145,7 +171,7 @@ def run_test_conversation():
 
 if __name__ == "__main__":
     # Run the conversation
-    final_state = run_test_conversation()
+    captured_selected_task, captured_collected_details, captured_client_info = run_test_conversation()
     
     # Evaluate results
     print("\n" + "=" * 70)
@@ -153,14 +179,14 @@ if __name__ == "__main__":
     print("=" * 70)
     
     evals = {
-        "task_selected": eval_task_selected,
-        "offer_details": eval_offer_details_complete,
-        "client_info": eval_client_info_complete,
+        "task_selected": lambda: eval_task_selected(captured_selected_task),
+        "offer_details": lambda: eval_offer_details_complete(captured_collected_details),
+        "client_info": lambda: eval_client_info_complete(captured_client_info),
     }
     
     results = {}
     for name, eval_fn in evals.items():
-        result = eval_fn(final_state)
+        result = eval_fn()
         status = "✓ PASS" if result["score"] == 1.0 else "✗ FAIL"
         print(f"\n{status} | {result['key']}")
         print(f"   Score: {result['score']}")

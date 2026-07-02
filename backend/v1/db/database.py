@@ -3,7 +3,19 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-DB_CONN_STR = os.getenv('DB_CONN_STR')
+
+# Build connection string dynamically from individual variables if they exist,
+# otherwise fallback to DB_CONN_STR.
+db_driver = os.getenv('DB_DRIVER')
+db_server = os.getenv('DB_SERVER')
+db_name = os.getenv('DB_NAME')
+db_trusted = os.getenv('DB_TRUSTED_CONNECTION', 'yes')
+db_trust_cert = os.getenv('DB_TRUST_SERVER_CERTIFICATE', 'yes')
+
+if db_driver and db_server and db_name:
+    DB_CONN_STR = f"DRIVER={db_driver};SERVER={db_server};DATABASE={db_name};Trusted_Connection={db_trusted};TrustServerCertificate={db_trust_cert};"
+else:
+    DB_CONN_STR = os.getenv('DB_CONN_STR')
 
 def get_db_connection():
     """
@@ -163,7 +175,7 @@ def save_client_and_offer(client_info: dict, offer_details: dict, prompt_text: s
             deadline_date = date.today().isoformat()
             
         category = offer_details.get('major_category', offer_details.get('project_type', ''))
-        subcategory = offer_details.get('sub_category', '')
+        subcategory = ""
         
         cursor.execute("""
             INSERT INTO dbo.Offer_requests (client_id, category, subcategory, deadline, prompt_text)

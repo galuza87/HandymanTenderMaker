@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import os 
-import os
+import sys
+# Add parent directory of 'backend' to python path so internal imports work
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -56,7 +59,7 @@ def get_contractors():
 async def chat_endpoint(req: ChatRequest, request: Request):
     session_id = req.session_id
     client_ip = request.client.host if request.client else "unknown"
-    
+    # see what this session is all about 
     if session_id not in sessions:
         sessions[session_id] = AgentState(messages=[], ip_address=client_ip)
         

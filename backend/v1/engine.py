@@ -164,6 +164,7 @@ def llm_determine_task(llm: ChatOpenAI, state: AgentState) -> AgentState:
             task = data.get("task")
             if task in ["handyman_request", "quote_request", "tender_request"]:
                 state.selected_task = task
+                state.next_step = "gather_info"
             state.messages.append({"role": "assistant", "content": data.get("reply")})
             
             return state
@@ -202,10 +203,10 @@ def llm_gather_info(llm: ChatOpenAI, state: AgentState) -> AgentState:
         "one or more of the remaining missing details.\n"
         "3. If all required details are now gathered, do not ask a question.\n\n"
         "Output your response strictly as a JSON object with these keys:\n"
-        "- 'extracted_details': a dictionary of the newly extracted details only (e.g., {'major_category': 'appliance fixing', 'sub_category': 'dishwasher repair (Bosch)'})\n"
+        "- 'extracted_details': a dictionary of the newly extracted details only (e.g., {'major_category': 'appliance fixing'})\n"
         "- 'reply': your professional response / query to the user.\n"
         "Example format:\n"
-        '{"extracted_details": {"major_category": "plumbing", "sub_category": "leak repair"}, "reply": "Excellent, I\'ve recorded that plumbing leak repair. Next, could you describe the job details?"}'
+        '{"extracted_details": {"major_category": "plumbing"}, "reply": "Excellent, I\'ve recorded that you need plumbing help. Next, could you describe the job details?"}'
     )
 
     messages_payload: List[Tuple[str, Any]] = [

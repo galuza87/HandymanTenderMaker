@@ -15,7 +15,7 @@ AVAILABLE_TASKS = {
     "handyman_request": {
         "name": "Handyman Service Request",
         "description": "Drafts a detailed service request for handyman tasks such as plumbing, electrical work, appliance fixing, and carpentry.",
-        "required_fields": ["major_category", "sub_category", "job_description", "timeframe"],
-        "gold_standard": "You are a professional Handyman Coordinator. Please draft a formal service request for the following handyman job:\n\n- **Service Category**: {major_category} ({sub_category})\n- **Detailed Job Description**: {job_description}\n- **Desired Timeframe**: {timeframe}\n\nPlease generate a clear and professional work order so that contractors can bid on this job with their pricing and availability."
+        "required_fields": ["major_category", "job_description", "timeframe"],
+        "gold_standard": "You are a professional Handyman Coordinator. Please draft a formal service request for the following handyman job:\n\n- **Service Category**: {major_category}\n- **Detailed Job Description**: {job_description}\n- **Desired Timeframe**: {timeframe}\n\nPlease generate a clear and professional work order so that contractors can bid on this job with their pricing and availability."
     }
 }
