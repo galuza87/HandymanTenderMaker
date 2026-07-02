@@ -149,43 +149,265 @@ def insert_prompt_log(ip: str, prompt: str):
     except Exception as e:
         print(f"Error logging prompt to DB: {e}")
 
-def save_client_and_offer(client_info: dict, offer_details: dict, prompt_text: str):
+def init_db():
+    """
+    Initializes the required database tables if they do not exist.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Create CLIENTS table
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Clients' and xtype='U')
+        CREATE TABLE dbo.Clients (
+            id INT IDENTITY(1,1) PRIMARY KEY,
+            name NVARCHAR(150),
+            last_name NVARCHAR(150),
+            phone NVARCHAR(50),
+            additional_phone NVARCHAR(50),
+            email NVARCHAR(150),
+            address NVARCHAR(250),
+            created_at DATETIME DEFAULT GETDATE()
+        )
+    """)
+    
+    # Ensure new columns exist if the table was created previously without them
+    cursor.execute("""
+        IF COL_LENGTH('dbo.Clients', 'last_name') IS NULL
+        BEGIN
+            ALTER TABLE dbo.Clients ADD last_name NVARCHAR(150)
+        END
+        
+        IF COL_LENGTH('dbo.Clients', 'additional_phone') IS NULL
+        BEGIN
+            ALTER TABLE dbo.Clients ADD additional_phone NVARCHAR(50)
+        END
+    """)
+    
+    # Create PROJECTS table
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='PROJECTS' and xtype='U')
+        CREATE TABLE dbo.PROJECTS (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            CLIENT_ID INT,
+            created_date DATETIME DEFAULT GETDATE(),
+            general_description NVARCHAR(MAX),
+            STATUS_ID INT,
+            ADDRESS_ID INT,
+            comments NVARCHAR(MAX)
+        )
+    """)
+    
+    # Create SUB_TASKS table
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='SUB_TASKS' and xtype='U')
+        CREATE TABLE dbo.SUB_TASKS (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            PROJECT_ID INT,
+            CATEGORY_ID INT,
+            SUBTASK_STATUS_ID INT,
+            CONTRACTOR_ID INT,
+            TENDER_ID INT,
+            comments NVARCHAR(MAX),
+            FOREIGN KEY (PROJECT_ID) REFERENCES dbo.PROJECTS(ID),
+            FOREIGN KEY (CATEGORY_ID) REFERENCES dbo.major_category(id)
+        )
+    """)
+    # Create TEST_SUB_TASKS table for AI logging
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TEST_SUB_TASKS' and xtype='U')
+        CREATE TABLE dbo.TEST_SUB_TASKS (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            SESSION_ID NVARCHAR(255),
+            PROJECT_ID INT,
+            CATEGORY_ID INT,
+            CONFIDENCE_SCORE FLOAT,
+            SUBTASK_STATUS_ID INT,
+            CONTRACTOR_ID INT,
+            TENDER_ID INT,
+            comments NVARCHAR(MAX),
+            created_at DATETIME DEFAULT GETDATE()
+        )
+    """)
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def create_project(client_id: int, description: str, status_id: int = None, address_id: int = None, comments: str = None) -> int:
+    """
+    Creates a new project and returns its ID.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Insert client
         cursor.execute("""
-            INSERT INTO dbo.Clients (name, phone, email, address)
-            OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?)
-        """, (
-            client_info.get('name', ''),
-            client_info.get('phone', ''),
-            client_info.get('email', ''),
-            client_info.get('address', '')
-        ))
-        client_id = cursor.fetchone()[0]
-        
-        # Process deadline: if 'asap' or similar, use today
-        deadline_raw = offer_details.get('timeframe', offer_details.get('deadline', ''))
-        deadline_date = None
-        if 'asap' in deadline_raw.lower() or 'soon' in deadline_raw.lower() or 'today' in deadline_raw.lower():
-            from datetime import date
-            deadline_date = date.today().isoformat()
-            
-        category = offer_details.get('major_category', offer_details.get('project_type', ''))
-        subcategory = ""
-        
-        cursor.execute("""
-            INSERT INTO dbo.Offer_requests (client_id, category, subcategory, deadline, prompt_text)
+            INSERT INTO dbo.PROJECTS (CLIENT_ID, general_description, STATUS_ID, ADDRESS_ID, comments)
+            OUTPUT INSERTED.ID
             VALUES (?, ?, ?, ?, ?)
-        """, (client_id, category, subcategory, deadline_date, prompt_text))
+        """, (client_id, description, status_id, address_id, comments))
         
+        project_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return project_id
+    except Exception as e:
+        print(f"Error creating project: {e}")
+        return None
+
+def create_sub_task(project_id: int, category_id: int, status_id: int = None, contractor_id: int = None, tender_id: int = None, comments: str = None) -> int:
+    """
+    Creates a new sub task under a project and returns its ID.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO dbo.SUB_TASKS (PROJECT_ID, CATEGORY_ID, SUBTASK_STATUS_ID, CONTRACTOR_ID, TENDER_ID, comments)
+            OUTPUT INSERTED.ID
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (project_id, category_id, status_id, contractor_id, tender_id, comments))
+        
+        sub_task_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return sub_task_id
+    except Exception as e:
+        print(f"Error creating sub task: {e}")
+        return None
+
+def log_test_sub_task(session_id: str, category_id: int, confidence_score: float, comments: str = None):
+    """
+    Logs the AI node evaluation into the TEST_SUB_TASKS table.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO dbo.TEST_SUB_TASKS (SESSION_ID, CATEGORY_ID, CONFIDENCE_SCORE, comments)
+            VALUES (?, ?, ?, ?)
+        """, (session_id, category_id, confidence_score, comments))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error logging to TEST_SUB_TASKS: {e}")
+
+def get_client_by_phone(phone: str):
+    """
+    Fetches a client by their primary phone number.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, last_name, phone, additional_phone, email, address FROM dbo.Clients WHERE phone = ?", (phone,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            return {
+                "id": row.id,
+                "name": row.name,
+                "last_name": row.last_name,
+                "phone": row.phone,
+                "additional_phone": row.additional_phone,
+                "email": row.email,
+                "address": row.address
+            }
+        return None
+    except Exception as e:
+        print(f"Error fetching client by phone: {e}")
+        return None
+
+def create_client(name: str, last_name: str, phone: str, additional_phone: str, email: str, address: str):
+    """
+    Creates a new client and returns their ID.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO dbo.Clients (name, last_name, phone, additional_phone, email, address)
+            OUTPUT INSERTED.id
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, last_name, phone, additional_phone, email, address))
+        client_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return client_id
+    except Exception as e:
+        print(f"Error creating client: {e}")
+        return None
+
+def update_client(client_id: int, name: str, last_name: str, additional_phone: str, email: str, address: str):
+    """
+    Updates an existing client's details.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE dbo.Clients
+            SET name = ?, last_name = ?, additional_phone = ?, email = ?, address = ?
+            WHERE id = ?
+        """, (name, last_name, additional_phone, email, address, client_id))
         conn.commit()
         cursor.close()
         conn.close()
         return True
     except Exception as e:
-        print(f"Error saving client and offer request: {e}")
+        print(f"Error updating client: {e}")
         return False
+
+def get_projects_by_client_id(client_id: int):
+    """
+    Fetches all projects and their subtasks for a specific client.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.ID as project_id, p.created_date, p.general_description,
+                   s.ID as subtask_id, s.CATEGORY_ID, s.comments, mc.name as category_name
+            FROM dbo.PROJECTS p
+            LEFT JOIN dbo.SUB_TASKS s ON p.ID = s.PROJECT_ID
+            LEFT JOIN dbo.major_category mc ON s.CATEGORY_ID = mc.id
+            WHERE p.CLIENT_ID = ?
+            ORDER BY p.created_date DESC
+        """, (client_id,))
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        projects = {}
+        for row in rows:
+            pid = row.project_id
+            if pid not in projects:
+                projects[pid] = {
+                    "id": pid,
+                    "created_date": row.created_date.isoformat() if row.created_date else None,
+                    "description": row.general_description,
+                    "subtasks": []
+                }
+            if row.subtask_id:
+                projects[pid]["subtasks"].append({
+                    "id": row.subtask_id,
+                    "category": row.category_name,
+                    "comments": row.comments
+                })
+                
+        return list(projects.values())
+    except Exception as e:
+        print(f"Error fetching projects for client: {e}")
+        return []

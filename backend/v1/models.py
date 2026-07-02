@@ -7,16 +7,37 @@ class ChatRequest(BaseModel):
     session_id: str
     image: Optional[str] = None
 
+class LoginRequest(BaseModel):
+    phone: str
+
+class RegisterRequest(BaseModel):
+    phone: str
+    name: str
+    last_name: str
+    email: str
+    address: str
+    additional_phone: Optional[str] = None
+
+class UpdateClientRequest(BaseModel):
+    name: str
+    last_name: str
+    email: str
+    address: str
+    additional_phone: Optional[str] = None
+
 class ChatResponse(BaseModel):
     reply: str
-    selected_task: Optional[str] = None
+    identified_categories: List[Dict[str, Any]] = []
+    sub_tasks: List[Dict[str, Any]] = []
     collected_details: Dict[str, str] = {}
 
 # Graph State 
 class AgentState(BaseModel):
     messages: List[Dict[str, Any]]
-    selected_task: Optional[str] = None
+    session_id: Optional[str] = None
+    identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing", "confidence_score": 0.95}]
+    sub_tasks: List[Dict[str, Any]] = [] # e.g., [{"sub_task_id": 1, "description": "fix pipe", "category_id": 1, "confidence_score": 0.9}]
     collected_details: Dict[str, str] = {}
     client_info: Dict[str, str] = {}
-    next_step: str = "determine_task"
+    next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks
     ip_address: Optional[str] = None
