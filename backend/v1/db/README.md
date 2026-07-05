@@ -11,34 +11,41 @@ This directory contains utility scripts to manage the `HandymanDB` database in a
 ## Scripts
 
 ### 1. Initializing the Database (`init_db.py`)
+
 Used to create the `HandymanDB` database, build its schema, and seed it with initial data.
 
 **Usage (Run from project root):**
+
 ```powershell
 python backend/v1/db/init_db.py
 ```
 
 ### 2. Backing up the Database (`backup_db.py`)
+
 Creates a full backup of the existing `HandymanDB` and saves it as `HandymanDB.bak` in the root of the project.
 
 **Usage (Run from project root):**
+
 ```powershell
 python backend/v1/db/backup_db.py
 ```
 
 ### 3. Restoring the Database (`restore_db.py`)
+
 Reads the `HandymanDB.bak` file from the project root and restores it as a brand-new database with the name format `HandymanDB_YYYYMMDD_HHMMSS`. The physical `.mdf` and `.ldf` files are automatically relocated/renamed to prevent conflicts with the original database.
 
 **Usage (Run from project root):**
+
 ```powershell
 python backend/v1/db/restore_db.py
 ```
 
 ## Troubleshooting Backup/Restore Errors
 
-If you encounter an error like `Operating system error 5 (Access is denied.)` during backup or restore, it means the SQL Server engine does not have permission to write to or read from your project folder. 
+If you encounter an error like `Operating system error 5 (Access is denied.)` during backup or restore, it means the SQL Server engine does not have permission to write to or read from your project folder.
 
 **To fix this locally on Windows:**
+
 1. Right-click your project folder in Windows Explorer and select **Properties**.
 2. Go to the **Security** tab.
 3. Click **Edit...** then **Add...**.
