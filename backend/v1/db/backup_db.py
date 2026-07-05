@@ -12,8 +12,8 @@ def backup_database():
         conn = pyodbc.connect(MASTER_CONN_STR, autocommit=True)
         cursor = conn.cursor()
         
-        # Determine backup file path (saving to the root of the project)
-        backup_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        backup_dir = os.path.join(project_root, 'backup')
         backup_file = os.path.join(backup_dir, 'HandymanDB.bak')
         
         print(f"Backing up HandymanDB to {backup_file}...")

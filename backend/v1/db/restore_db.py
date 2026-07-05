@@ -13,7 +13,8 @@ def restore_database():
         conn = pyodbc.connect(MASTER_CONN_STR, autocommit=True)
         cursor = conn.cursor()
         
-        backup_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        backup_dir = os.path.join(project_root, 'backup')
         backup_file = os.path.join(backup_dir, 'HandymanDB.bak')
         
         # We can't rely on python os.path.exists if the SQL server is on another machine, 
