@@ -46,9 +46,11 @@ def restore_database():
                 
                 move_clauses.append(f"MOVE '{logical_name}' TO '{new_physical_name}'")
                 
-            restore_cmd += ", ".join(move_clauses)
+            restore_cmd += ", ".join(move_clauses) + ", RECOVERY"
             
             cursor.execute(restore_cmd)
+            while cursor.nextset():
+                pass
             print(f"Database restored successfully as '{new_db_name}'.")
             
         except pyodbc.Error as e:
