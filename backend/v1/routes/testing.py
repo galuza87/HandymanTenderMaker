@@ -10,6 +10,7 @@ from backend.v1.db.database import insert_test_run, insert_test_result, get_test
 router = APIRouter()
 
 class TestCase(BaseModel):
+    id: Optional[int] = None
     input: str
     expected: str  # "single", "multiple", or "not able to identify"
 
