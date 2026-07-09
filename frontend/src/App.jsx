@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
+import TestingDashboard from './TestingDashboard'
 
 function App() {
   // Auth States
@@ -371,10 +372,11 @@ function App() {
           <nav className="nav-tabs">
             <button className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 AI Bid Wizard</button>
             <button className={`nav-tab ${activeTab === 'directory' ? 'active' : ''}`} onClick={() => setActiveTab('directory')}>🗂️ Categories</button>
+            <button className={`nav-tab ${activeTab === 'testing' ? 'active' : ''}`} onClick={() => setActiveTab('testing')}>🧪 Testing</button>
           </nav>
         </header>
 
-        {activeTab === 'chat' ? (
+        {activeTab === 'chat' && (
           <main className="chat-container">
             {messages.length === 1 && (
               <div className="welcome-screen">
@@ -437,7 +439,9 @@ function App() {
               </form>
             </div>
           </main>
-        ) : (
+        )}
+        
+        {activeTab === 'directory' && (
           <main className="directory-container">
             <section className="directory-sidebar">
               <div className="search-box">
@@ -478,6 +482,10 @@ function App() {
               )}
             </section>
           </main>
+        )}
+
+        {activeTab === 'testing' && (
+          <TestingDashboard />
         )}
       </div>
 

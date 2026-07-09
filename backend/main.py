@@ -27,6 +27,10 @@ init_db()
 # --- APP                          --- #
 app = FastAPI()
 
+# --- Include Routers              --- #
+from backend.v1.routes.testing import router as testing_router
+app.include_router(testing_router, prefix="/api/v1/tests", tags=["Testing"])
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
