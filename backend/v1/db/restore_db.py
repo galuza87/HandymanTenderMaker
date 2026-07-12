@@ -25,6 +25,12 @@ def restore_database():
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         new_db_name = f"HandymanDB_{date_str}"
         
+        # Fetch from this SQL Server instance the data/log files directories
+        cursor.execute(
+            "SELECT SERVERPROPERTY('InstanceDefaultDataPath'), SERVERPROPERTY('InstanceDefaultLogPath')"
+        ) 
+        default_data_path, default_log_path = cursor.fetchone()  
+
         print(f"Restoring backup from {backup_file} to new database '{new_db_name}'...")
         
         # Get logical file names from backup to relocate them, otherwise SQL Server will try 
@@ -39,13 +45,14 @@ def restore_database():
             for file_info in files:
                 logical_name = file_info[0]
                 physical_name = file_info[1]
+                file_type = file_info[2]  # 'D' = data/ndf, 'L' = log
                 
-                dir_name = os.path.dirname(physical_name)
+                target_dir = default_data_path if file_type == 'D' else default_log_path 
                 base_name, ext = os.path.splitext(os.path.basename(physical_name))
-                new_physical_name = os.path.join(dir_name, f"{base_name}_{date_str}{ext}")
+                new_physical_name = os.path.join(target_dir, f"{base_name}_{date_str}{ext}")
                 
                 move_clauses.append(f"MOVE '{logical_name}' TO '{new_physical_name}'")
-                
+
             restore_cmd += ", ".join(move_clauses) + ", RECOVERY"
             
             cursor.execute(restore_cmd)
