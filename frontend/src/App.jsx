@@ -214,6 +214,7 @@ function App() {
         body: JSON.stringify({
           message: userMessage,
           session_id: sessionId,
+          user_id: loggedInClient ? loggedInClient.id : null,
           image: currentImage
         }),
       });

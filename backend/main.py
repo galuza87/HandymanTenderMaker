@@ -8,10 +8,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 # --- Internal imports             --- #
 from backend.v1.models import ChatRequest, ChatResponse, AgentState, LoginRequest, RegisterRequest, UpdateClientRequest
 from backend.v1.engine import sessions
-from backend.v1.db.database import get_all_categories_with_subs, get_all_contractors, search_categories_and_subs, insert_prompt_log, init_db, get_client_by_phone, create_client, get_projects_by_client_id, update_client
+from backend.v1.db.database import get_all_categories_with_subs, get_all_contractors, search_categories_and_subs, insert_prompt_log, init_db, get_client_by_phone, create_client, get_projects_by_client_id, update_client, get_client_by_id
 api_key = os.getenv("LANGSMITH_API_KEY")
 
 # --- Harness algorithm version    --- #
@@ -121,19 +124,43 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         
     state = sessions[session_id]
     state.ip_address = client_ip
+    if req.user_id is not None:
+        state.user_id = req.user_id
+        
+    if state.user_id is not None and not state.client_info:
+        client = get_client_by_id(state.user_id)
+        if client:
+            state.client_info = {
+                "name": f"{client.get('name', '')} {client.get('last_name', '')}".strip(),
+                "phone": client.get('phone', ''),
+                "address": client.get('address', '') or ''
+            }
     
     msg_data = {"role": "user", "content": req.message}
     if req.image:
         msg_data["image"] = req.image
         
     state.messages.append(msg_data)
+    old_msg_count = len(state.messages)
     
     new_state = engine.process(state)
     sessions[session_id] = new_state
     
-    last_message = new_state.messages[-1].get('content', '')
+    # Gather all non-empty assistant messages generated in this turn
+    new_ai_messages = [
+        msg.get("content", "") 
+        for msg in new_state.messages[old_msg_count:] 
+        if msg.get("role") == "assistant" and msg.get("content", "").strip() != ""
+    ]
+    
+    if new_ai_messages:
+        reply_text = "\n\n".join(new_ai_messages)
+    else:
+        # Fallback just in case
+        reply_text = new_state.messages[-1].get('content', '') if new_state.messages else ''
+        
     return ChatResponse(
-        reply=last_message,
+        reply=reply_text,
         identified_categories=new_state.identified_categories,
         sub_tasks=new_state.sub_tasks,
         collected_details=new_state.collected_details

@@ -1,313 +1,317 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple, Literal
 import os
-import httpx
 import json
-import re
-from openai import OpenAI, APIConnectionError
+import logging
+from openai import APIConnectionError
 from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
-from pydantic import SecretStr
-from typing import List, Tuple, Union, Dict, Any
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langgraph.prebuilt import create_react_agent as create_agent
+from langchain_core.tools import tool, StructuredTool
+from langgraph.graph import StateGraph, END
+from typing import TypedDict
 
 # --- Internal imports             ---
 from backend.v1.models import AgentState
-from backend.v1.db.database import insert_prompt_log, get_all_categories_with_subs, create_project, create_sub_task, log_test_sub_task
+from backend.v1.db.database import get_all_categories_with_subs, create_project, create_sub_task, log_test_sub_task, get_main_address_by_client_id
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
 
 # --- In-memory session store      ---
 sessions: Dict[str, AgentState] = {}
 
-# --- LM Studio Connection & Setup ---
 def get_llm() -> ChatOpenAI:
-    """
-    Returns a ChatOpenAI client configured for LM Studio.
-    """
     return ChatOpenAI(
         base_url=LM_STUDIO_URL,
-        api_key=SecretStr(LM_STUDIO_API_KEY),
+        api_key=LM_STUDIO_API_KEY,
         temperature=0.7,
+        # IMPORTANT: LM Studio models must support tool calling for this to work natively.
     )
 
-
-# --- The engine of version 1      ---
-class Engine:
-    """The Algorithm engine - version 1"""
-    
-    def __init__(self, llm=None):
-        self.llm = llm if llm is not None else get_llm()
-
-    # --- Class API methods               --  
-    def determine_number_of_subtasks(self, state: AgentState) -> AgentState:
-        return llm_determine_number_of_subtasks(self.llm, state)
-
-    def confirm_multiple_subtasks(self, state: AgentState) -> AgentState:
-        return llm_confirm_multiple_subtasks(self.llm, state)
-    
-    def determine_task_category(self, state: AgentState) -> AgentState:
-        return llm_determine_task_category(self.llm, state)
-    
-    def collect_client_info(self, state: AgentState) -> AgentState:
-        return llm_collect_client_info(self.llm, state)
-    
-    # --- Main workflow Router ---
-    def process(self, state: AgentState) -> AgentState:
-        """Main workflow - runs steps until it needs user input"""
-        max_iterations = 3
-        for _ in range(max_iterations):
-            current_step = state.next_step
-            
-            if current_step == "determine_number_of_subtasks":
-                state = self.determine_number_of_subtasks(state)
-            elif current_step == "confirm_multiple_subtasks":
-                state = self.confirm_multiple_subtasks(state)
-            elif current_step == "determine_task_category":
-                state = self.determine_task_category(state)
-            elif current_step == "collect_client_info":
-                state = self.collect_client_info(state)
-            else:
-                state = self.determine_number_of_subtasks(state)
-                
-            # If the step didn't advance, or it reached a stage that needs user input, break.
-            if state.next_step == current_step or state.next_step in ["collect_client_info", "confirm_multiple_subtasks"]:
-                break
-                
-        return state
-    
-
-# --- LLM Intelligent Implementations ---
-def llm_determine_number_of_subtasks(llm: ChatOpenAI, state: AgentState) -> AgentState:
-    user_msg = state.messages[-1].get('content', '')
-    user_img = state.messages[-1].get('image')
-    
-    # Dynamically inject database categories
-    categories_str = ""
+# --- Define Tools ---
+@tool
+def fetch_available_categories() -> str:
+    """Returns a formatted string of all available contractor categories from the database. Use this to see what trades are available."""
     try:
         categories = get_all_categories_with_subs()
+        categories_str = ""
         for cat in categories:
             subs = ", ".join([f"{sub['name']}" for sub in cat["subcategories"]])
             categories_str += f"- ID: {cat['id']} | **{cat['name']}**: {subs}\n"
+        return categories_str
     except Exception as e:
-        categories_str = "- ID: 1 | General Handyman\n"
-
-    prompt = (
-        "You are BuildWizard AI, an intelligent project analyzer. Your goal is to understand how many different "
-        "kinds of professionals (categories) are needed to complete the user's request.\n\n"
-        "Here are the major categories available in our database:\n"
-        f"{categories_str}\n"
-        f"User message: '{user_msg}'\n\n"
-        "Output your response strictly as a JSON object with these keys:\n"
-        "- 'identified_categories': a list of objects, each containing:\n"
-        "    - 'category_id': The ID of the matching major category\n"
-        "    - 'name': The name of the category\n"
-        "    - 'confidence_score': A float between 0.0 and 1.0 indicating your confidence.\n"
-        "- 'reply': A conversational response acknowledging the professionals needed. IF MULTIPLE are needed, ask the user to confirm what specific subtasks they think they will need for the job.\n"
-        "Example format:\n"
-        '{"identified_categories": [{"category_id": 1, "name": "plumbing", "confidence_score": 0.95}], "reply": "Great, I see you need a plumber!"}'
-    )
-
-    messages_payload: List[Tuple[str, Any]] = [
-    ("system", prompt),
-    ]
-
-    for msg in state.messages:
-        m_role = msg["role"]
-        m_content = msg.get("content", "")
-        m_img = msg.get("image")
-        if m_img and m_role == "user":
-            messages_payload.append((m_role, [
-                {"type": "text", "text": m_content},
-                {"type": "image_url", "image_url": {"url": m_img}}
-            ]))
-        else:
-            messages_payload.append((m_role, m_content))
-
-    try:
-        if state.ip_address:
-            insert_prompt_log(state.ip_address, prompt)
-        response = llm.invoke(messages_payload)
-        content = response.content.strip() # type: ignore
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group(0))
-            cats = data.get("identified_categories", [])
-            
-            if cats:
-                state.identified_categories = cats
-                if len(cats) > 1:
-                    state.next_step = "confirm_multiple_subtasks"
-                else:
-                    state.next_step = "determine_task_category"
-                
-                # Log to the testing AI log table
-                if state.session_id:
-                    for cat in cats:
-                        log_test_sub_task(
-                            session_id=state.session_id, 
-                            category_id=cat.get("category_id"), 
-                            confidence_score=cat.get("confidence_score", 0.0),
-                            comments=f"Raw AI Output: {cat.get('name')}"
-                        )
-            
-            state.messages.append({"role": "assistant", "content": data.get("reply", "Understood. Moving to the next step.")})
-            return state
-    except APIConnectionError as e:      
-        print(f"API Connection Error: {e}")
-        print(f"{e.__cause__}")
-        state.messages.append({"role": "assistant", "content": "⚠️ **Error:** I'm having trouble connecting to the AI brain right now. Please verify LM Studio is running!"})
-    except Exception as e:
-        print(f"LLM node 1 failed: {e}")
-        state.messages.append({"role": "assistant", "content": "⚠️ **Error:** I'm having trouble connecting to the AI brain right now. Please verify LM Studio is running!"})
-
-    return state
+        return "- ID: 1 | General Handyman\n"
 
 
-def llm_confirm_multiple_subtasks(llm: ChatOpenAI, state: AgentState) -> AgentState:
-    user_msg = state.messages[-1].get('content', '')
+
+# --- LangGraph State Definition ---
+class GraphState(TypedDict):
+    messages: list
+    identified_categories: list
+    sub_tasks: list
+    client_info: dict
+    next_agent: str
+    ip_address: str
+    session_id: str
+    user_id: Optional[int]
+
+# --- Agent Nodes ---
+def categorizer_node(state: GraphState) -> dict:
+    llm = get_llm()
+    tools = [fetch_available_categories]
     
-    prompt = (
-        "You are BuildWizard AI. We previously identified multiple professionals needed for the project:\n"
-        f"{json.dumps(state.identified_categories)}\n\n"
-        f"The user was asked to confirm the specific subtasks they think they will need.\n"
-        f"User's response: '{user_msg}'\n\n"
-        "Your goal is to parse their response and update the identified categories if they mentioned they don't need some of them, "
-        "or just acknowledge their details and move to task categorization.\n\n"
-        "Output your response strictly as a JSON object with these keys:\n"
-        "- 'updated_categories': The final list of category objects (same structure as above) that we should proceed with.\n"
-        "- 'reply': A short conversational acknowledgment before moving on.\n"
+    system_prompt = (
+        "You are the Categorizer Agent. Analyze the user's request. Follow these steps:\n"
+        "1. Determine if this requires single or multiple professionals (keep this reasoning internal, do NOT output phrases like 'This requires a single professional' to the client).\n"
+        "2. Use the fetch_available_categories tool to find the correct professional category. (DO NOT mention internal category numbers or IDs like 'Category ID 15' to the user. Keep category mappings strictly internal).\n"
+        "3. YOU MUST ALWAYS ask the client to describe the problem/symptoms (e.g., 'What exactly is wrong with it?') BEFORE creating the tender. Ask the client if there is missing data.\n"
+        "CRITICAL RULES FOR QUESTIONS:\n"
+        "- Do NOT ask the client to perform any technical diagnosis, open appliances, or interact with electrical components. Clients are not professionals and doing so could put them in danger or void their warranty. We just need enough general information to pass to the professional.\n"
+        "- Do NOT ask for the model number if they already provided one in their message.\n"
+        "- Do NOT ask for the user's location, address, or contact details. Another agent will handle that.\n"
+        "If you have enough information to determine the professional needed and create a tender, "
+        "append the exact word 'READY_FOR_TENDER' at the very end of your response. Do NOT output any summary or success message; another agent will handle that."
     )
-
-    messages_payload: List[Tuple[str, Any]] = [
-        ("system", prompt),
-        ("user", "Process my response and finalize the categories.")
-    ]
-
+    
+    agent = create_agent(model=llm, tools=tools, prompt=system_prompt)
+    
     try:
-        if state.ip_address:
-            insert_prompt_log(state.ip_address, prompt)
-        response = llm.invoke(messages_payload)
-        content = response.content.strip() # type: ignore
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group(0))
-            updated_cats = data.get("updated_categories", [])
-            
-            if updated_cats:
-                state.identified_categories = updated_cats
-                
-            state.next_step = "determine_task_category"
-            state.messages.append({"role": "assistant", "content": data.get("reply", "Got it. Let me break down the subtasks now.")})
-            return state
-    except Exception as e:
-        print(f"LLM confirm multiple failed: {e}")
-        state.messages.append({"role": "assistant", "content": "⚠️ **Error:** I couldn't process your confirmation. Let's try again!"})
+        result = agent.invoke({"messages": state["messages"]})
+        last_message = result["messages"][-1]
+        content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
-    return state
-
-
-def llm_determine_task_category(llm: ChatOpenAI, state: AgentState) -> AgentState:
-    user_msg = state.messages[-1].get('content', '')
-    
-    prompt = (
-        "You are BuildWizard AI. We have identified the following categories needed for the project:\n"
-        f"{json.dumps(state.identified_categories)}\n\n"
-        f"Original User Request: '{state.messages[0].get('content', '')}'\n"
-        "Your task is to break down the user's project into specific subtasks for each identified category.\n\n"
-        "Output your response strictly as a JSON object with these keys:\n"
-        "- 'sub_tasks': a list of objects, each containing:\n"
-        "    - 'category_id': The ID of the category this subtask belongs to\n"
-        "    - 'description': A detailed description of what needs to be done for this subtask\n"
-        "    - 'confidence_score': A float between 0.0 and 1.0 indicating your confidence in this categorization.\n"
-        "- 'reply': A professional response informing the user that we have categorized their subtasks, and asking for their contact details (Name, Phone, Address) to proceed.\n"
-    )
-
-    messages_payload: List[Tuple[str, Any]] = [
-        ("system", prompt),
-        ("user", "Please categorize the subtasks and prompt for contact info.")
-    ]
-
-    try:
-        if state.ip_address:
-            insert_prompt_log(state.ip_address, prompt)
-        response = llm.invoke(messages_payload)
-        content = response.content.strip() # type: ignore
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group(0))
-            tasks = data.get("sub_tasks", [])
-            
-            if tasks:
-                state.sub_tasks = tasks
-                
-            state.next_step = "collect_client_info"
-            state.messages.append({"role": "assistant", "content": data.get("reply")})
-                
-            return state
-    except Exception as e:
-        print(f"LLM node 2 failed: {e}")
-        state.messages.append({"role": "assistant", "content": "⚠️ **Error:** I couldn't categorize the subtasks. Please try again!"})
-        
-    return state
-
-
-def llm_collect_client_info(llm: ChatOpenAI, state: AgentState) -> AgentState:
-    user_msg = state.messages[-1].get('content', '')
-    
-    prompt = (
-        f"Currently collected client info: {json.dumps(state.client_info)}\n"
-        f"User's response: '{user_msg}'\n\n"
-        "You are BuildWizard AI. The user's project has been split into subtasks, and we now need their contact details to save the request.\n"
-        "The required fields are: 'name', 'phone', and 'address'.\n\n"
-        "Your goal is to:\n"
-        "1. Extract any new contact information from the user's response.\n"
-        "2. If 'name', 'phone', or 'address' are still missing, ask the user for them politely.\n"
-        "3. If all required contact details are gathered, return confirmed: true.\n\n"
-        "Output your response strictly as a JSON object with these keys:\n"
-        "- 'extracted_details': a dictionary of the newly extracted contact details (e.g. {'name': 'John', 'phone': '555-1234'}).\n"
-        "- 'confirmed': true if we have name, phone, and address. false otherwise.\n"
-        "- 'reply': your professional response / question to the user. If confirmed, give a warm closing message saying the project was saved and sent to contractors.\n"
-    )
-    
-    messages_payload: List[Tuple[str, Any]] = [
-        ("system", prompt),
-        ("user", user_msg)
-    ]
-
-    try:
-        if state.ip_address:
-            insert_prompt_log(state.ip_address, prompt)
-        response = llm.invoke(messages_payload)
-        content = response.content.strip() # type: ignore
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group(0))
-            new_details = data.get("extracted_details", {})
-            for k, v in new_details.items():
-                if k in ["name", "phone", "address"]:
-                    state.client_info[k] = str(v)
-            
-            has_all = all(k in state.client_info for k in ["name", "phone", "address"])
-            
-            if data.get("confirmed") or has_all:
-                # Need a real client creation logic here, assuming Client ID 1 for now if we can't create one.
-                # In a real app we'd save the Client, then Project, then Sub Tasks.
-                desc = state.messages[0].get('content', 'General Project')
-                project_id = create_project(client_id=1, description=desc, comments=str(state.client_info))
-                if project_id:
-                    for st in state.sub_tasks:
-                        create_sub_task(project_id=project_id, category_id=st.get("category_id"), comments=st.get("description"))
-                
-                state.messages.append({"role": "assistant", "content": data.get("reply", "Perfect! Your request has been saved and sent to local contractors. We will be in touch shortly!")})
-                state.identified_categories = []
-                state.sub_tasks = []
-                state.client_info = {}
-                state.next_step = "determine_number_of_subtasks"
+        if isinstance(content_str, str) and "READY_FOR_TENDER" in content_str:
+            next_agent = "Architect"
+            clean_content = content_str.replace("READY_FOR_TENDER", "").strip()
+            if hasattr(last_message, 'content'):
+                result["messages"][-1] = AIMessage(content=clean_content)
             else:
-                state.messages.append({"role": "assistant", "content": data.get("reply")})
-
-            return state
+                result["messages"][-1]["content"] = clean_content
+        else:
+            next_agent = "Categorizer"
+            
+        return {
+            "messages": result["messages"], 
+            "next_agent": next_agent
+        }
     except Exception as e:
-        print(f"LLM client info gathering failed: {e}")
-        state.messages.append({"role": "assistant", "content": "⚠️ **Error:** I couldn't process your contact info. Please try again!"})
+        print(f"Categorizer error: {e}")
+        return {"messages": state["messages"] + [{"role": "assistant", "content": "⚠️ Check LM Studio tool-calling support!"}]}
+
+def architect_node(state: GraphState) -> dict:
+    llm = get_llm()
+    system_prompt = (
+        "You are the Project Architect. Analyze the user's request and break the project into actionable sub-tasks internally.\n"
+        "You MUST keep your reasoning and the sub-tasks strictly internal by formatting your ENTIRE response as a JSON list of strings representing the tasks.\n"
+        "Example: [\"Inspect power source\", \"Check control board\"]\n"
+        "DO NOT output any other text, greetings, or explanations. ONLY output the JSON list."
+    )
+    
+    # We create a tool-less agent for the architect
+    agent = create_agent(model=llm, tools=[], prompt=system_prompt)
+    
+    try:
+        result = agent.invoke({"messages": state["messages"]})
+        last_message = result["messages"][-1]
+        content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
-    return state
+        # Parse the JSON sub-tasks
+        sub_tasks = list(state.get("sub_tasks", []))
+        try:
+            import json
+            import re
+            match = re.search(r'\[.*\]', content_str, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group(0))
+                if isinstance(parsed, list):
+                    for task_desc in parsed:
+                        if isinstance(task_desc, str):
+                            sub_tasks.append({"sub_task_id": len(sub_tasks) + 1, "description": task_desc})
+        except Exception as e:
+            print(f"Failed to parse sub-tasks: {e}")
+            
+        # Hide the architect's response from the chat history
+        result["messages"].pop()
+        
+        return {
+            "messages": result["messages"], 
+            "sub_tasks": sub_tasks,
+            "next_agent": "IntakeCoordinator"
+        }
+    except Exception as e:
+        return {"messages": state["messages"] + [{"role": "assistant", "content": f"Architect error: {e}"}]}
+
+def intake_node(state: GraphState) -> dict:
+    llm = get_llm()
+    
+    def _save_client_and_project(name: str, phone: str, address: str, general_description: str) -> str:
+        """
+        Saves the collected client info and project details into the database.
+        """
+        try:
+            client_id = state.get("user_id")
+            if not client_id:
+                client_id = 1 # Fallback for anonymous users
+            
+            project_id = create_project(client_id=client_id, description=general_description, comments=f"Name: {name}, Phone: {phone}, Address: {address}")
+            return "Project successfully saved to the database. Tell the user it has been submitted to contractors."
+        except Exception as e:
+            return f"Failed to save to database: {e}"
+
+    save_tool = StructuredTool.from_function(
+        func=_save_client_and_project,
+        name="save_client_and_project",
+        description="Saves the collected client info and project details into the database."
+    )
+    
+    tools = [save_tool]
+    
+    client_info_str = f"{state.get('client_info', {})}"
+    system_prompt = (
+        "You are the Intake Coordinator. "
+        f"CRITICAL INSTRUCTION: You already have the following client details pre-loaded from the database: {client_info_str}\n"
+        "1. DO NOT ask the user for their Name or Phone Number if they are already present in the pre-loaded details above. Use the pre-loaded details.\n"
+        "2. If an 'address' is present in the pre-loaded details above, YOU MUST NOT ask them to type their address from scratch. Instead, you MUST ask them to confirm it like this: 'Is this the correct address for the project: [insert address here]?'\n"
+        "3. ONLY ask the user to provide Name, Phone, or Address IF they are completely missing from the pre-loaded details, OR if they tell you the pre-loaded address is wrong.\n"
+        "Once you have confirmed or collected the final Name, Phone, and Address, YOU MUST use the save_client_and_project tool to save the project.\n"
+        "After successfully saving the project via the tool, provide a brief summary of their request, tell the user 'Your tender has been created and you will receive quotes soon.', and append the exact word 'ALL_DONE' to your response."
+    )
+    
+    agent = create_agent(model=llm, tools=tools, prompt=system_prompt)
+    
+    try:
+        result = agent.invoke({"messages": state["messages"]})
+        last_message = result["messages"][-1]
+        content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
+        
+        if isinstance(content_str, str) and "ALL_DONE" in content_str:
+            next_agent = "Categorizer"
+            clean_content = content_str.replace("ALL_DONE", "").strip()
+            if hasattr(last_message, 'content'):
+                result["messages"][-1] = AIMessage(content=clean_content)
+            else:
+                result["messages"][-1]["content"] = clean_content
+        else:
+            next_agent = "IntakeCoordinator"
+            
+        return {
+            "messages": result["messages"],
+            "next_agent": next_agent
+        }
+    except Exception as e:
+        return {"messages": state["messages"] + [{"role": "assistant", "content": f"Intake error: {e}"}]}
+
+# --- Routing logic ---
+def route(state: GraphState) -> Literal["Categorizer", "Architect", "IntakeCoordinator", "__end__"]:
+    next_agent = state.get("next_agent", "Categorizer")
+    if next_agent == "Categorizer" or next_agent == "determine_number_of_subtasks":
+        return "Categorizer"
+    elif next_agent == "Architect" or next_agent == "determine_task_category" or next_agent == "confirm_multiple_subtasks":
+        return "Architect"
+    elif next_agent == "IntakeCoordinator" or next_agent == "collect_client_info":
+        return "IntakeCoordinator"
+    return "Categorizer"
+
+def supervisor_node(state: GraphState) -> dict:
+    # Pass-through node to map the previous regex next_step to our new LangGraph next_agent
+    current = state.get("next_agent")
+    if current in ["determine_number_of_subtasks", "Categorizer", None]:
+        return {"next_agent": "Categorizer"}
+    if current in ["confirm_multiple_subtasks", "determine_task_category", "Architect"]:
+        return {"next_agent": "Architect"}
+    if current in ["collect_client_info", "IntakeCoordinator"]:
+        return {"next_agent": "IntakeCoordinator"}
+    return {"next_agent": "Categorizer"}
+
+# --- Build Graph ---
+workflow = StateGraph(GraphState)
+workflow.add_node("Supervisor", supervisor_node)
+workflow.add_node("Categorizer", categorizer_node)
+workflow.add_node("Architect", architect_node)
+workflow.add_node("IntakeCoordinator", intake_node)
+
+def categorizer_edge(state: GraphState) -> str:
+    if state.get("next_agent") == "Architect":
+        return "Architect"
+    return END
+
+def architect_edge(state: GraphState) -> str:
+    # Architect seamlessly transitions to IntakeCoordinator
+    return "IntakeCoordinator"
+
+def intake_edge(state: GraphState) -> str:
+    return END
+
+workflow.set_entry_point("Supervisor")
+workflow.add_conditional_edges("Supervisor", route)
+
+workflow.add_conditional_edges("Categorizer", categorizer_edge)
+workflow.add_conditional_edges("Architect", architect_edge)
+workflow.add_conditional_edges("IntakeCoordinator", intake_edge)
+
+app = workflow.compile()
+
+# --- Engine Wrapper ---
+class Engine:
+    """The Algorithm engine - Multi-Agent LangGraph version"""
+    
+    def __init__(self, llm=None):
+        pass
+
+    def process(self, state: AgentState) -> AgentState:
+        # Convert Pydantic Dict messages to LangChain Messages
+        lc_messages = []
+        for msg in state.messages:
+            if msg.get("role") == "user":
+                lc_messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                lc_messages.append(AIMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "system":
+                lc_messages.append(SystemMessage(content=msg.get("content", "")))
+            else:
+                # Generic fallback if it has a content field
+                lc_messages.append(HumanMessage(content=str(msg.get("content", ""))))
+                
+        input_state = {
+            "messages": lc_messages,
+            "identified_categories": state.identified_categories,
+            "sub_tasks": state.sub_tasks,
+            "client_info": state.client_info,
+            "next_agent": state.next_step,
+            "ip_address": state.ip_address,
+            "session_id": state.session_id,
+            "user_id": state.user_id
+        }
+        
+        # Add debugging logs BEFORE invoking
+        logging.info(f"--- [Engine Process Start] next_step: {state.next_step} ---")
+        
+        # Invoke LangGraph
+        final_state = app.invoke(input_state)
+        
+        # Add debugging logs AFTER invoking
+        logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
+        logging.info(f"Total messages after graph: {len(final_state['messages'])}")
+        for idx, m in enumerate(final_state['messages']):
+            logging.info(f"Message {idx} type: {type(m)} | content: {m.content}")
+        
+        # Map LangChain Messages back to plain dicts for the Pydantic State
+        new_messages = []
+        for msg in final_state["messages"]:
+            if isinstance(msg, HumanMessage):
+                new_messages.append({"role": "user", "content": str(msg.content)})
+            elif isinstance(msg, AIMessage):
+                new_messages.append({"role": "assistant", "content": str(msg.content)})
+            elif isinstance(msg, SystemMessage):
+                new_messages.append({"role": "system", "content": str(msg.content)})
+            elif isinstance(msg, ToolMessage):
+                new_messages.append({"role": "tool", "content": str(msg.content)})
+            else:
+                new_messages.append({"role": msg.type if hasattr(msg, "type") else "unknown", "content": str(msg.content)})
+        
+        state.messages = new_messages
+        state.next_step = final_state.get("next_agent", "Categorizer")
+        if "sub_tasks" in final_state:
+            state.sub_tasks = final_state["sub_tasks"]
+        
+        return state

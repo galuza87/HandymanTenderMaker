@@ -41,10 +41,19 @@ def main():
     backend_dir = os.path.join(base_dir, "backend")
     frontend_dir = os.path.join(base_dir, "frontend")
     
+    # Smartly resolve the correct python executable
+    venv_python = os.path.join(base_dir, ".venv", "Scripts", "python.exe")
+    if os.path.exists(venv_python) and sys.prefix == sys.base_prefix:
+        python_exe = venv_python
+        print(f"-> Auto-detected .venv. Using: {python_exe}")
+    else:
+        python_exe = sys.executable
+        print(f"-> Using Python executable: {python_exe}")
+    
     try:
-        # Start the Python backend using the current Python executable (supports .venv)
+        # Start the Python backend using the resolved executable
         backend_process = subprocess.Popen(
-            [sys.executable, "main.py"],
+            [python_exe, "main.py"],
             cwd=backend_dir
         )
         print("-> Backend started (main.py)")

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import time
 
-from backend.v1.engine import get_llm, llm_determine_number_of_subtasks
+from backend.v1.engine import Engine
 from backend.v1.models import AgentState
 from backend.v1.db.database import insert_test_run, insert_test_result, get_test_runs, get_test_results_by_run
 
@@ -23,7 +23,7 @@ def run_tests(request: TestRunRequest):
     if not request.cases:
         raise HTTPException(status_code=400, detail="No test cases provided")
         
-    llm = get_llm()
+    engine = Engine()
     results = []
     correct_count = 0
     total_time = 0.0
@@ -37,17 +37,17 @@ def run_tests(request: TestRunRequest):
         
         # Execute the LLM node we are testing
         if request.test_type == "contractor-intent":
-            state = llm_determine_number_of_subtasks(llm, state)
+            # Run through the new multi-agent orchestrator
+            state = engine.process(state)
             
-            # Evaluate outcome
-            cats = state.identified_categories
-            if cats is None:
-                cats = []
-                
-            if len(cats) == 1:
-                actual = "single"
-            elif len(cats) > 1:
+            # The new Categorizer agent responds conversationally instead of returning hardcoded JSON.
+            # We use a simple heuristic to determine what it categorized for testing purposes.
+            reply = state.messages[-1].get("content", "").lower()
+            
+            if "and" in reply or "multiple" in reply or len(state.identified_categories) > 1:
                 actual = "multiple"
+            elif any(trade in reply for trade in ["plumber", "electrician", "carpenter", "roofer", "handyman"]):
+                actual = "single"
             else:
                 actual = "not able to identify"
         else:

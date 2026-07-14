@@ -166,7 +166,6 @@ def init_db():
             phone NVARCHAR(50),
             additional_phone NVARCHAR(50),
             email NVARCHAR(150),
-            address NVARCHAR(250),
             created_at DATETIME DEFAULT GETDATE()
         )
     """)
@@ -182,6 +181,34 @@ def init_db():
         BEGIN
             ALTER TABLE dbo.Clients ADD additional_phone NVARCHAR(50)
         END
+        
+        IF COL_LENGTH('dbo.Clients', 'address') IS NOT NULL
+        BEGIN
+            ALTER TABLE dbo.Clients DROP COLUMN address
+        END
+    """)
+
+    # Create Addresses table
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Addresses' and xtype='U')
+        CREATE TABLE dbo.Addresses (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            address_text NVARCHAR(250),
+            IS_MAIN_ADDRESS BIT DEFAULT 0,
+            Project_id INT
+        )
+    """)
+    
+    # Create Client_Address table
+    cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Client_Address' and xtype='U')
+        CREATE TABLE dbo.Client_Address (
+            CLIENT_ID INT,
+            ADDRESS_ID INT,
+            PRIMARY KEY (CLIENT_ID, ADDRESS_ID),
+            FOREIGN KEY (CLIENT_ID) REFERENCES dbo.Clients(id),
+            FOREIGN KEY (ADDRESS_ID) REFERENCES dbo.Addresses(ID)
+        )
     """)
     
     # Create PROJECTS table
@@ -335,7 +362,14 @@ def get_client_by_phone(phone: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, last_name, phone, additional_phone, email, address FROM dbo.Clients WHERE phone = ?", (phone,))
+        cursor.execute("""
+            SELECT c.id, c.name, c.last_name, c.phone, c.additional_phone, c.email,
+                   (SELECT TOP 1 a.address_text FROM dbo.Addresses a 
+                    JOIN dbo.Client_Address ca ON a.ID = ca.ADDRESS_ID 
+                    WHERE ca.CLIENT_ID = c.id ORDER BY a.IS_MAIN_ADDRESS DESC, a.ID ASC) as address
+            FROM dbo.Clients c 
+            WHERE c.phone = ?
+        """, (phone,))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -355,7 +389,41 @@ def get_client_by_phone(phone: str):
         print(f"Error fetching client by phone: {e}")
         return None
 
-def create_client(name: str, last_name: str, phone: str, additional_phone: str, email: str, address: str):
+def get_client_by_id(client_id: int):
+    """
+    Fetches a client by their ID.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT c.id, c.name, c.last_name, c.phone, c.additional_phone, c.email,
+                   (SELECT TOP 1 a.address_text FROM dbo.Addresses a 
+                    JOIN dbo.Client_Address ca ON a.ID = ca.ADDRESS_ID 
+                    WHERE ca.CLIENT_ID = c.id ORDER BY a.IS_MAIN_ADDRESS DESC, a.ID ASC) as address
+            FROM dbo.Clients c 
+            WHERE c.id = ?
+        """, (client_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            return {
+                "id": row.id,
+                "name": row.name,
+                "last_name": row.last_name,
+                "phone": row.phone,
+                "additional_phone": row.additional_phone,
+                "email": row.email,
+                "address": row.address
+            }
+        return None
+    except Exception as e:
+        print(f"Error fetching client by ID: {e}")
+        return None
+
+def create_client(name: str, last_name: str, phone: str, additional_phone: str, email: str, address: str = None):
     """
     Creates a new client and returns their ID.
     """
@@ -363,11 +431,25 @@ def create_client(name: str, last_name: str, phone: str, additional_phone: str, 
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO dbo.Clients (name, last_name, phone, additional_phone, email, address)
+            INSERT INTO dbo.Clients (name, last_name, phone, additional_phone, email)
             OUTPUT INSERTED.id
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, last_name, phone, additional_phone, email, address))
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, last_name, phone, additional_phone, email))
         client_id = cursor.fetchone()[0]
+        
+        if address:
+            cursor.execute("""
+                INSERT INTO dbo.Addresses (address_text, IS_MAIN_ADDRESS)
+                OUTPUT INSERTED.ID
+                VALUES (?, 1)
+            """, (address,))
+            address_id = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                INSERT INTO dbo.Client_Address (CLIENT_ID, ADDRESS_ID)
+                VALUES (?, ?)
+            """, (client_id, address_id))
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -376,7 +458,7 @@ def create_client(name: str, last_name: str, phone: str, additional_phone: str, 
         print(f"Error creating client: {e}")
         return None
 
-def update_client(client_id: int, name: str, last_name: str, additional_phone: str, email: str, address: str):
+def update_client(client_id: int, name: str, last_name: str, additional_phone: str, email: str, address: str = None):
     """
     Updates an existing client's details.
     """
@@ -385,9 +467,30 @@ def update_client(client_id: int, name: str, last_name: str, additional_phone: s
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo.Clients
-            SET name = ?, last_name = ?, additional_phone = ?, email = ?, address = ?
+            SET name = ?, last_name = ?, additional_phone = ?, email = ?
             WHERE id = ?
-        """, (name, last_name, additional_phone, email, address, client_id))
+        """, (name, last_name, additional_phone, email, client_id))
+        
+        if address:
+            cursor.execute("""
+                SELECT a.ID FROM dbo.Addresses a
+                JOIN dbo.Client_Address ca ON a.ID = ca.ADDRESS_ID
+                WHERE ca.CLIENT_ID = ? AND a.address_text = ?
+            """, (client_id, address))
+            existing_address = cursor.fetchone()
+            
+            if not existing_address:
+                cursor.execute("""
+                    INSERT INTO dbo.Addresses (address_text, IS_MAIN_ADDRESS)
+                    OUTPUT INSERTED.ID
+                    VALUES (?, 0)
+                """, (address,))
+                address_id = cursor.fetchone()[0]
+                
+                cursor.execute("""
+                    INSERT INTO dbo.Client_Address (CLIENT_ID, ADDRESS_ID)
+                    VALUES (?, ?)
+                """, (client_id, address_id))
         conn.commit()
         cursor.close()
         conn.close()
@@ -438,6 +541,28 @@ def get_projects_by_client_id(client_id: int):
     except Exception as e:
         print(f"Error fetching projects for client: {e}")
         return []
+
+def get_main_address_by_client_id(client_id: int):
+    """
+    Fetches the main address for a given client ID.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT TOP 1 a.address_text 
+            FROM dbo.Addresses a 
+            JOIN dbo.Client_Address ca ON a.ID = ca.ADDRESS_ID 
+            WHERE ca.CLIENT_ID = ? 
+            ORDER BY a.IS_MAIN_ADDRESS DESC, a.ID ASC
+        """, (client_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return row[0] if row else None
+    except Exception as e:
+        print(f"Error fetching main address for client: {e}")
+        return None
 def insert_test_run(test_type: str, accuracy: float, avg_time: float) -> int:
     try:
         conn = get_db_connection()
