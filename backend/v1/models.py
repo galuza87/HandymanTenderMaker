@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Any
 class ChatRequest(BaseModel):
     message: str
     session_id: str
+    user_id: Optional[int] = None
     image: Optional[str] = None
 
 class LoginRequest(BaseModel):
@@ -35,6 +36,7 @@ class ChatResponse(BaseModel):
 class AgentState(BaseModel):
     messages: List[Dict[str, Any]]
     session_id: Optional[str] = None
+    user_id: Optional[int] = None
     identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing", "confidence_score": 0.95}]
     sub_tasks: List[Dict[str, Any]] = [] # e.g., [{"sub_task_id": 1, "description": "fix pipe", "category_id": 1, "confidence_score": 0.9}]
     collected_details: Dict[str, str] = {}
