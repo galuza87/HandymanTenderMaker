@@ -44,3 +44,4 @@ class AgentState(BaseModel):
     next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks
     ip_address: Optional[str] = None
     CategorizerDecision: Optional[Dict[str, Any]] = None
+    project_id: Optional[int] = None

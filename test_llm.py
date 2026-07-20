@@ -6,7 +6,7 @@ llm = get_llm()
 llm.model_name = "gpt-4o"
 
 class Out(BaseModel):
-    decision: Literal['single', 'multiple'] = Field(description="Return 'single' if only ONE trade or professional is mentioned (e.g. plumber). Return 'multiple' if MORE THAN ONE trade is needed (e.g. plumber and electrician).")
+    decision: Literal['single', 'multiple', 'unknown'] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed. Return 'unknown' if it's just a greeting or too vague to know.")
     confidence: float
 
 prompt = """
