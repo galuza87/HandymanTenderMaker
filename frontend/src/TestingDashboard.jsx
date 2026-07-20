@@ -8,7 +8,8 @@ export default function TestingDashboard() {
   const [testCasesInput, setTestCasesInput] = useState(JSON.stringify([
     { id: 1, input: "I need a plumber to fix a leak", expected: "single" },
     { id: 2, input: "I need a plumber and an electrician", expected: "multiple" },
-    { id: 3, input: "hello", expected: "unknown" }
+    { id: 3, input: "hello", expected: "unknown" },
+    { id: 4, input: "I need to remodel my bathroom, maybe just a handyman can do it all", expected: "unknown" }
   ], null, 2));
   const [selectedResults, setSelectedResults] = useState(null);
 
