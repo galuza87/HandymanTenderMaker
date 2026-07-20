@@ -12,7 +12,7 @@ router = APIRouter()
 class TestCase(BaseModel):
     id: Optional[int] = None
     input: str
-    expected: str  # "single", "multiple", or "not able to identify"
+    expected: str  # "single", "multiple", or "unknown"
 
 class TestRunRequest(BaseModel):
     test_type: str
@@ -45,12 +45,12 @@ def run_tests(request: TestRunRequest):
                 confidence = state.CategorizerDecision.get("confidence", 0.0)
                 decision = state.CategorizerDecision.get("decision", "multiple")
                 
-                if confidence < 0.5:
-                    actual = "not able to identify"
+                if confidence < 0.5 or decision == "unknown":
+                    actual = "unknown"
                 else:
                     actual = decision
             else:
-                actual = "not able to identify"
+                actual = "unknown"
         else:
             raise HTTPException(status_code=400, detail="Unknown test type")
             

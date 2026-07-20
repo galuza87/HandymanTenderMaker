@@ -8,7 +8,7 @@ export default function TestingDashboard() {
   const [testCasesInput, setTestCasesInput] = useState(JSON.stringify([
     { id: 1, input: "I need a plumber to fix a leak", expected: "single" },
     { id: 2, input: "I need a plumber and an electrician", expected: "multiple" },
-    { id: 3, input: "hello", expected: "not able to identify" }
+    { id: 3, input: "hello", expected: "unknown" }
   ], null, 2));
   const [selectedResults, setSelectedResults] = useState(null);
 
@@ -83,7 +83,7 @@ export default function TestingDashboard() {
     <main className="directory-container" style={{ padding: '20px', overflowY: 'auto' }}>
       <div style={{ marginBottom: '20px' }}>
         <h3>🧪 Test Execution: Contractor Intent</h3>
-        <p>Edit the JSON below to add or modify test cases. Expected values: <code>single</code>, <code>multiple</code>, <code>not able to identify</code>.</p>
+        <p>Edit the JSON below to add or modify test cases. Expected values: <code>single</code>, <code>multiple</code>, <code>unknown</code>.</p>
         <textarea 
           style={{ width: '100%', height: '150px', fontFamily: 'monospace', padding: '10px', background: '#1a1f36', color: '#fff', border: '1px solid #333', borderRadius: '4px' }}
           value={testCasesInput}
