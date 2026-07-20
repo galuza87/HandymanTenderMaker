@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any, Tuple, Literal
 import os
 import json
@@ -24,6 +24,7 @@ def get_llm() -> ChatOpenAI:
     return ChatOpenAI(
         base_url=LM_STUDIO_URL,
         api_key=LM_STUDIO_API_KEY,
+        model_name="gpt-4o", # Spoof model name to force Langchain to allow json_schema
         temperature=0.7,
         # IMPORTANT: LM Studio models must support tool calling for this to work natively.
     )
@@ -54,49 +55,43 @@ class GraphState(TypedDict):
     ip_address: str
     session_id: str
     user_id: Optional[int]
+    CategorizerDecision: dict
 
 # --- Agent Nodes ---
 def categorizer_node(state: GraphState) -> dict:
     llm = get_llm()
-    tools = [fetch_available_categories]
     
     system_prompt = (
-        "You are the Categorizer Agent. Analyze the user's request. Follow these steps:\n"
-        "1. Determine if this requires single or multiple professionals (keep this reasoning internal, do NOT output phrases like 'This requires a single professional' to the client).\n"
-        "2. Use the fetch_available_categories tool to find the correct professional category. (DO NOT mention internal category numbers or IDs like 'Category ID 15' to the user. Keep category mappings strictly internal).\n"
-        "3. YOU MUST ALWAYS ask the client to describe the problem/symptoms (e.g., 'What exactly is wrong with it?') BEFORE creating the tender. Ask the client if there is missing data.\n"
-        "CRITICAL RULES FOR QUESTIONS:\n"
-        "- Do NOT ask the client to perform any technical diagnosis, open appliances, or interact with electrical components. Clients are not professionals and doing so could put them in danger or void their warranty. We just need enough general information to pass to the professional.\n"
-        "- Do NOT ask for the model number if they already provided one in their message.\n"
-        "- Do NOT ask for the user's location, address, or contact details. Another agent will handle that.\n"
-        "If you have enough information to determine the professional needed and create a tender, "
-        "append the exact word 'READY_FOR_TENDER' at the very end of your response. Do NOT output any summary or success message; another agent will handle that."
+        "You are the Categorizer Agent. Analyze the user's request.\n"
+        "Your ONLY job is to determine if the task requires a 'single' professional or 'multiple' professionals.\n"
+        "If you cannot decide, return 'multiple' with a low confidence score.\n"
+        "Output your decision and your confidence score."
     )
     
-    agent = create_agent(model=llm, tools=tools, prompt=system_prompt)
-    
-    try:
-        result = agent.invoke({"messages": state["messages"]})
-        last_message = result["messages"][-1]
-        content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
+    class CategorizerDecisionOutput(BaseModel):
+        decision: Literal["single", "multiple"] = Field(description="Return 'single' if only ONE trade or professional is mentioned (e.g. plumber). Return 'multiple' if MORE THAN ONE trade is needed (e.g. plumber and electrician).")
+        confidence: float = Field(description="Confidence score between 0.0 and 1.0")
         
-        if isinstance(content_str, str) and "READY_FOR_TENDER" in content_str:
-            next_agent = "Architect"
-            clean_content = content_str.replace("READY_FOR_TENDER", "").strip()
-            if hasattr(last_message, 'content'):
-                result["messages"][-1] = AIMessage(content=clean_content)
-            else:
-                result["messages"][-1]["content"] = clean_content
-        else:
-            next_agent = "Categorizer"
-            
+    try:
+        structured_llm = llm.with_structured_output(CategorizerDecisionOutput, method="json_schema")
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        result = structured_llm.invoke(messages)
+        
+        decision_dict = {
+            "decision": result.decision,
+            "confidence": result.confidence
+        }
+        
         return {
-            "messages": result["messages"], 
-            "next_agent": next_agent
+            "CategorizerDecision": decision_dict,
+            "next_agent": "Architect"
         }
     except Exception as e:
         print(f"Categorizer error: {e}")
-        return {"messages": state["messages"] + [{"role": "assistant", "content": "⚠️ Check LM Studio tool-calling support!"}]}
+        return {
+            "CategorizerDecision": {"decision": "multiple", "confidence": 0.1},
+            "next_agent": "Architect"
+        }
 
 def architect_node(state: GraphState) -> dict:
     llm = get_llm()
@@ -280,7 +275,8 @@ class Engine:
             "next_agent": state.next_step,
             "ip_address": state.ip_address,
             "session_id": state.session_id,
-            "user_id": state.user_id
+            "user_id": state.user_id,
+            "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else {}
         }
         
         # Add debugging logs BEFORE invoking
@@ -293,7 +289,9 @@ class Engine:
         logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
         logging.info(f"Total messages after graph: {len(final_state['messages'])}")
         for idx, m in enumerate(final_state['messages']):
-            logging.info(f"Message {idx} type: {type(m)} | content: {m.content}")
+            content = m.content if hasattr(m, 'content') else (m.get('content', '') if isinstance(m, dict) else str(m))
+            m_type = type(m)
+            logging.info(f"Message {idx} type: {m_type} | content: {content}")
         
         # Map LangChain Messages back to plain dicts for the Pydantic State
         new_messages = []
@@ -313,5 +311,7 @@ class Engine:
         state.next_step = final_state.get("next_agent", "Categorizer")
         if "sub_tasks" in final_state:
             state.sub_tasks = final_state["sub_tasks"]
+        if "CategorizerDecision" in final_state:
+            state.CategorizerDecision = final_state["CategorizerDecision"]
         
         return state

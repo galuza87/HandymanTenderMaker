@@ -70,7 +70,8 @@ export default function TestingDashboard() {
           expected: r.ExpectedOutcome,
           actual: r.ActualOutcome,
           exec_time: r.ExecutionTimeMs,
-          is_correct: r.IsCorrect
+          is_correct: r.IsCorrect,
+          confidence_score: r.ConfidenceScore
         }))
       });
     } catch (e) {
@@ -107,6 +108,7 @@ export default function TestingDashboard() {
                 <th>Input</th>
                 <th>Expected</th>
                 <th>Actual</th>
+                <th>Confidence</th>
                 <th>Time (s)</th>
                 <th>Result</th>
               </tr>
@@ -117,6 +119,7 @@ export default function TestingDashboard() {
                   <td style={{ padding: '8px 0' }}>{res.input}</td>
                   <td>{res.expected}</td>
                   <td>{res.actual}</td>
+                  <td>{res.confidence_score != null ? Number(res.confidence_score).toFixed(2) : '-'}</td>
                   <td>{(res.exec_time / 1000).toFixed(3)}</td>
                   <td style={{ color: res.is_correct ? '#4caf50' : '#f44336' }}>
                     {res.is_correct ? "Pass" : "Fail"}

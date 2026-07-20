@@ -284,6 +284,14 @@ def init_db():
         )
     """)
     
+    # Ensure ConfidenceScore column exists
+    cursor.execute("""
+        IF COL_LENGTH('dbo.TestResults', 'ConfidenceScore') IS NULL
+        BEGIN
+            ALTER TABLE dbo.TestResults ADD ConfidenceScore FLOAT DEFAULT 0.0
+        END
+    """)
+    
     conn.commit()
     cursor.close()
     conn.close()
@@ -581,14 +589,14 @@ def insert_test_run(test_type: str, accuracy: float, avg_time: float) -> int:
         print(f"Error inserting test run: {e}")
         return None
 
-def insert_test_result(run_id: int, input_text: str, expected: str, actual: str, exec_time: float, is_correct: bool):
+def insert_test_result(run_id: int, input_text: str, expected: str, actual: str, exec_time: float, is_correct: bool, confidence_score: float = 0.0):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO dbo.TestResults (RunID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (run_id, input_text, expected, actual, exec_time, is_correct))
+            INSERT INTO dbo.TestResults (RunID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect, ConfidenceScore)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (run_id, input_text, expected, actual, exec_time, is_correct, confidence_score))
         conn.commit()
         cursor.close()
         conn.close()
@@ -621,7 +629,7 @@ def get_test_results_by_run(run_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT ResultID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect FROM dbo.TestResults WHERE RunID = ?", (run_id,))
+        cursor.execute("SELECT ResultID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect, ConfidenceScore FROM dbo.TestResults WHERE RunID = ?", (run_id,))
         rows = cursor.fetchall()
         results = []
         for row in rows:
@@ -631,7 +639,8 @@ def get_test_results_by_run(run_id: int):
                 "ExpectedOutcome": row.ExpectedOutcome,
                 "ActualOutcome": row.ActualOutcome,
                 "ExecutionTimeMs": row.ExecutionTimeMs,
-                "IsCorrect": bool(row.IsCorrect)
+                "IsCorrect": bool(row.IsCorrect),
+                "ConfidenceScore": row.ConfidenceScore if hasattr(row, 'ConfidenceScore') else 0.0
             })
         cursor.close()
         conn.close()

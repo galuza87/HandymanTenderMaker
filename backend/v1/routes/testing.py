@@ -40,14 +40,15 @@ def run_tests(request: TestRunRequest):
             # Run through the new multi-agent orchestrator
             state = engine.process(state)
             
-            # The new Categorizer agent responds conversationally instead of returning hardcoded JSON.
-            # We use a simple heuristic to determine what it categorized for testing purposes.
-            reply = state.messages[-1].get("content", "").lower()
-            
-            if "and" in reply or "multiple" in reply or len(state.identified_categories) > 1:
-                actual = "multiple"
-            elif any(trade in reply for trade in ["plumber", "electrician", "carpenter", "roofer", "handyman"]):
-                actual = "single"
+            # The Categorizer agent now populates CategorizerDecision in the state
+            if state.CategorizerDecision:
+                confidence = state.CategorizerDecision.get("confidence", 0.0)
+                decision = state.CategorizerDecision.get("decision", "multiple")
+                
+                if confidence < 0.5:
+                    actual = "not able to identify"
+                else:
+                    actual = decision
             else:
                 actual = "not able to identify"
         else:
@@ -65,6 +66,7 @@ def run_tests(request: TestRunRequest):
             "input": case.input,
             "expected": case.expected,
             "actual": actual,
+            "confidence_score": confidence if 'confidence' in locals() else 0.0,
             "exec_time": exec_time_ms,
             "is_correct": is_correct
         })
@@ -83,7 +85,8 @@ def run_tests(request: TestRunRequest):
                 res["expected"], 
                 res["actual"], 
                 res["exec_time"], 
-                res["is_correct"]
+                res["is_correct"],
+                res["confidence_score"]
             )
             
     return {

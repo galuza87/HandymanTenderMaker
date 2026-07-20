@@ -8,21 +8,27 @@ import time
 
 def check_lm_studio():
     """Checks if LM Studio is running and has a model loaded on port 1234."""
-    url = "http://localhost:1234/v1/models"
+    url = "http://localhost:1234/api/v1/models"
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                # If the 'data' array has elements, a model is loaded.
-                if data.get("data") and len(data["data"]) > 0:
-                    return True, "LM Studio is running and model is loaded."
+                # Check if any model has loaded_instances
+                is_loaded = False
+                for model in data.get("models", []):
+                    if model.get("loaded_instances") and len(model["loaded_instances"]) > 0:
+                        is_loaded = True
+                        break
+                
+                if is_loaded:
+                    return True, "LM Studio is running and a model is loaded."
                 else:
-                    return False, "LM studio not running / model is not loaded"
+                    return False, "LM Studio is running, but NO MODEL IS LOADED. Please load a model in LM Studio."
             else:
                 return False, f"Unexpected response status: {response.status}"
     except urllib.error.URLError:
-        return False, "LM studio not running / model is not loaded"
+        return False, "LM Studio not running. Please start the local server in LM Studio on port 1234."
     except Exception as e:
         return False, f"Error: {str(e)}"
 
