@@ -8,8 +8,8 @@ Based on our conversation, I have mapped out the entire flow starting from the U
 flowchart TD
     User(["User Request"]) --> Categorizer["Categorizer Node\n(Single-pass Extraction)"]
     
-    %% Low Confidence Path
-    Categorizer -- "Confidence <= 0.5" --> InfoGatherer["Information Gatherer\n(Conversational Agent)"]
+    %% Low Confidence / Unknown Path
+    Categorizer -- "Confidence <= 0.5 OR 'Unknown'" --> InfoGatherer["Information Gatherer\n(Conversational Agent)"]
     InfoGatherer -. "Asks clarifying question" .-> User
     
     %% High Confidence Paths
