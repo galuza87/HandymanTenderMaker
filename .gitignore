@@ -42,3 +42,6 @@ pnpm-debug.log*
 *.sw?
 .DS_Store
 Thumbs.db
+
+# LangGraph API
+.langgraph_api

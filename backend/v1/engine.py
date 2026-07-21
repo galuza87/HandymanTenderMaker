@@ -43,7 +43,11 @@ def fetch_available_categories() -> str:
         return "- ID: 1 | General Handyman\n"
 
 # --- LangGraph State Definition ---
-class GraphState(TypedDict):
+class CategorizerDecisionOutput(BaseModel):
+    decision: Literal["single", "multiple", "unknown"] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed. Return 'unknown' if it's just a greeting or too vague to know.")
+    confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+
+class GraphState(TypedDict, total=False):
     messages: list
     identified_categories: list
     sub_tasks: list
@@ -52,7 +56,7 @@ class GraphState(TypedDict):
     ip_address: str
     session_id: str
     user_id: Optional[int]
-    CategorizerDecision: dict
+    CategorizerDecision: CategorizerDecisionOutput
     project_id: Optional[int]
 
 # --- Agent Nodes ---
@@ -65,20 +69,10 @@ def categorizer_node(state: GraphState) -> dict:
         "If the user request is just a greeting (like 'hello'), or too vague to know, return 'unknown' as your decision.\n"
         "Output your decision and your confidence score."
     )
-    
-    class CategorizerDecisionOutput(BaseModel):
-        decision: Literal["single", "multiple", "unknown"] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed. Return 'unknown' if it's just a greeting or too vague to know.")
-        confidence: float = Field(description="Confidence score between 0.0 and 1.0")
-        
     try:
         structured_llm = llm.with_structured_output(CategorizerDecisionOutput, method="json_schema")
         messages = [SystemMessage(content=system_prompt)] + state["messages"]
         result = structured_llm.invoke(messages)
-        
-        decision_dict = {
-            "decision": result.decision,
-            "confidence": result.confidence
-        }
         
         if result.decision == "unknown" or result.confidence <= 0.5:
             next_agent = "InformationGatherer"
@@ -88,13 +82,13 @@ def categorizer_node(state: GraphState) -> dict:
             next_agent = "MultiTaskArchitect"
             
         return {
-            "CategorizerDecision": decision_dict,
+            "CategorizerDecision": result,
             "next_agent": next_agent
         }
     except Exception as e:
         print(f"Categorizer error: {e}")
         return {
-            "CategorizerDecision": {"decision": "multiple", "confidence": 0.1},
+            "CategorizerDecision": CategorizerDecisionOutput(decision="multiple", confidence=0.1),
             "next_agent": "InformationGatherer"
         }
 
@@ -351,9 +345,6 @@ workflow.add_node("TenderCreator", tender_creator_node)
 def categorizer_edge(state: GraphState) -> str:
     return state.get("next_agent", "Categorizer")
 
-def info_edge(state: GraphState) -> str:
-    return END # Always pause after InformationGatherer
-
 def contractor_edge(state: GraphState) -> str:
     next_agent = state.get("next_agent")
     if next_agent == "ContractorCategorizer":
@@ -372,18 +363,35 @@ def intake_edge(state: GraphState) -> str:
         return END # Pause to wait for user reply
     return next_agent
 
-def tender_edge(state: GraphState) -> str:
-    return END
-
 workflow.set_entry_point("Supervisor")
-workflow.add_conditional_edges("Supervisor", route)
+workflow.add_conditional_edges(
+    "Supervisor", 
+    route,
+    ["Categorizer", "InformationGatherer", "ContractorCategorizer", "MultiTaskArchitect", "IntakeCoordinator", "TenderCreator"]
+)
 
-workflow.add_conditional_edges("Categorizer", categorizer_edge)
-workflow.add_conditional_edges("InformationGatherer", info_edge)
-workflow.add_conditional_edges("ContractorCategorizer", contractor_edge)
-workflow.add_conditional_edges("MultiTaskArchitect", architect_edge)
-workflow.add_conditional_edges("IntakeCoordinator", intake_edge)
-workflow.add_conditional_edges("TenderCreator", tender_edge)
+workflow.add_conditional_edges(
+    "Categorizer", 
+    categorizer_edge,
+    ["InformationGatherer", "ContractorCategorizer", "MultiTaskArchitect", "Categorizer"]
+)
+workflow.add_edge("InformationGatherer", END)
+workflow.add_conditional_edges(
+    "ContractorCategorizer", 
+    contractor_edge,
+    ["IntakeCoordinator", END]
+)
+workflow.add_conditional_edges(
+    "MultiTaskArchitect", 
+    architect_edge,
+    ["IntakeCoordinator", END]
+)
+workflow.add_conditional_edges(
+    "IntakeCoordinator", 
+    intake_edge,
+    ["TenderCreator", END]
+)
+workflow.add_edge("TenderCreator", END)
 
 app = workflow.compile()
 
