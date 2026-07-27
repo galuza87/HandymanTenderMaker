@@ -6,14 +6,11 @@ llm = get_llm()
 llm.model_name = "gpt-4o"
 
 class Out(BaseModel):
-    decision: Literal['single', 'multiple', 'unknown'] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed. Return 'unknown' if it's just a greeting or too vague to know.")
-    confidence: float
+    decision: Literal['single', 'multiple'] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed.")
 
 prompt = """
 You are the Categorizer Agent. Analyze the user's request.
 Your ONLY job is to determine if the task requires a 'single' professional or 'multiple' professionals.
-If you cannot decide, return 'multiple' with a low confidence score.
-Output your decision and your confidence score.
 
 User request: I need a plumber to fix a leak.
 """

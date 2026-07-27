@@ -42,13 +42,7 @@ def run_tests(request: TestRunRequest):
             
             # The Categorizer agent now populates CategorizerDecision in the state
             if state.CategorizerDecision:
-                confidence = state.CategorizerDecision.get("confidence", 0.0)
-                decision = state.CategorizerDecision.get("decision", "multiple")
-                
-                if confidence < 0.5 or decision == "unknown":
-                    actual = "unknown"
-                else:
-                    actual = decision
+                actual = state.CategorizerDecision.decision
             else:
                 actual = "unknown"
         else:
@@ -63,10 +57,10 @@ def run_tests(request: TestRunRequest):
             correct_count += 1
             
         results.append({
+            "id": case.id,
             "input": case.input,
             "expected": case.expected,
             "actual": actual,
-            "confidence_score": confidence if 'confidence' in locals() else 0.0,
             "exec_time": exec_time_ms,
             "is_correct": is_correct
         })
@@ -85,8 +79,7 @@ def run_tests(request: TestRunRequest):
                 res["expected"], 
                 res["actual"], 
                 res["exec_time"], 
-                res["is_correct"],
-                res["confidence_score"]
+                res["is_correct"]
             )
             
     return {

@@ -1,7 +1,10 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Literal
 
 # --- Classes                      ---
+class CategorizerDecisionClass(BaseModel):
+    decision: Literal["single", "multiple"]
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str
@@ -37,11 +40,11 @@ class AgentState(BaseModel):
     messages: List[Dict[str, Any]]
     session_id: Optional[str] = None
     user_id: Optional[int] = None
-    identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing", "confidence_score": 0.95}]
-    sub_tasks: List[Dict[str, Any]] = [] # e.g., [{"sub_task_id": 1, "description": "fix pipe", "category_id": 1, "confidence_score": 0.9}]
+    identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing"}]
+    sub_tasks: List[Dict[str, Any]] = [] # e.g., [{"sub_task_id": 1, "description": "fix pipe", "category_id": 1}]
     collected_details: Dict[str, str] = {}
     client_info: Dict[str, str] = {}
     next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks
     ip_address: Optional[str] = None
-    CategorizerDecision: Optional[Dict[str, Any]] = None
+    CategorizerDecision: Optional[CategorizerDecisionClass] = None
     project_id: Optional[int] = None

@@ -3,7 +3,7 @@ from typing import List, Dict, Optional, Any, Tuple, Literal
 import os
 import json
 import logging
-from openai import APIConnectionError
+from openai import APIConnectionError, OpenAI
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
@@ -13,7 +13,7 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict
 
 # --- Internal imports             ---
-from backend.v1.models import AgentState
+from backend.v1.models import AgentState, CategorizerDecisionClass
 from backend.v1.db.database import get_all_categories_with_subs, create_project, create_sub_task, log_test_sub_task, get_main_address_by_client_id
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
 
@@ -25,7 +25,7 @@ def get_llm() -> ChatOpenAI:
         base_url=LM_STUDIO_URL,
         api_key=LM_STUDIO_API_KEY,
         model_name="gpt-4o", # Spoof model name to force Langchain to allow json_schema
-        temperature=0.7,
+        temperature=0.7
     )
 
 # --- Define Tools ---
@@ -43,9 +43,12 @@ def fetch_available_categories() -> str:
         return "- ID: 1 | General Handyman\n"
 
 # --- LangGraph State Definition ---
-class CategorizerDecisionOutput(BaseModel):
-    decision: Literal["single", "multiple", "unknown"] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed. Return 'unknown' if it's just a greeting or too vague to know.")
-    confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+class DataValidatorOutput(BaseModel):
+    status: Literal["enough_information", "not_enough_information"] = Field(description="Return 'enough_information' if the request contains enough information to determine if one or multiple types of contractors are needed (e.g., 'I need a plumber to fix a leak' is enough). Return 'not_enough_information' otherwise.")
+    missing_context: Optional[str] = Field(description="If status is 'not_enough_information', specify what context is missing to ask the user.")
+
+class CategorizerDecisionLLMOutput(BaseModel):
+    decision: Literal["single", "multiple"] = Field(description="Return 'single' if ONE trade is mentioned. Return 'multiple' if MORE THAN ONE trade is needed.")
 
 class GraphState(TypedDict, total=False):
     messages: list
@@ -56,27 +59,91 @@ class GraphState(TypedDict, total=False):
     ip_address: str
     session_id: str
     user_id: Optional[int]
-    CategorizerDecision: CategorizerDecisionOutput
+    CategorizerDecision: CategorizerDecisionClass
     project_id: Optional[int]
 
 # --- Agent Nodes ---
+def data_validator_node(state: GraphState) -> dict:
+    llm = get_llm().with_structured_output(DataValidatorOutput)
+    
+    system_prompt = (
+        "You are the Data Validator. Review the client request. "
+        "Your goal is to determine if the request has enough information to cleanly identify all required contractor types (single or multiple). "
+        "1. If the user request is just a greeting (like 'hello'), or too vague to know, it does NOT have enough information. "
+        "2. If the client describes a complex problem that clearly involves multiple trades (e.g., plumbing and tiling) but only asks for ONE trade (e.g., 'I need a tiler'), "
+        "it does NOT have enough information. You must flag this discrepancy and use 'missing_context' to explain that another trade (like a plumber) might also be needed, asking for clarification. "
+        "If the request is clear and straightforward (e.g., 'I need a plumber to fix a leak' or 'I need a plumber and an electrician'), it has enough information."
+    )
+    try:
+        messages = [{"role": "system", "content": system_prompt}] + state.get("messages", [])
+        parsed = llm.invoke(messages)
+        
+        has_enough_data = parsed.status == "enough_information"
+        missing_context = parsed.missing_context or "Could you provide more details about the scope of work and the area involved?"
+        
+        if not has_enough_data:
+            from langchain_core.messages import AIMessage
+            new_messages = state.get("messages", []) + [AIMessage(content=missing_context)]
+            return {
+                "messages": new_messages,
+                "next_agent": "DataValidator" # We will route to END in edge
+            }
+        else:
+            return {
+                "next_agent": "Categorizer"
+            }
+    except Exception as e:
+        print(f"DataValidator error: {e}")
+        return {
+            "next_agent": "Categorizer"
+        }
+
 def categorizer_node(state: GraphState) -> dict:
-    llm = get_llm()
+    client = OpenAI(base_url=LM_STUDIO_URL, api_key=LM_STUDIO_API_KEY)
     
     system_prompt = (
         "You are the Categorizer Agent. Analyze the user's request.\n"
-        "Your ONLY job is to determine if the task requires a 'single' professional or 'multiple' professionals.\n"
-        "If the user request is just a greeting (like 'hello'), or too vague to know, return 'unknown' as your decision.\n"
-        "Output your decision and your confidence score."
+        "Your ONLY job is to determine if the task requires a 'single' professional or 'multiple' professionals."
     )
     try:
-        structured_llm = llm.with_structured_output(CategorizerDecisionOutput, method="json_schema")
-        messages = [SystemMessage(content=system_prompt)] + state["messages"]
-        result = structured_llm.invoke(messages)
+        oai_messages = [{"role": "system", "content": system_prompt}]
+        for msg in state.get("messages", []):
+            if isinstance(msg, dict):
+                oai_messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+            elif hasattr(msg, "type"):
+                role = msg.type if msg.type in ["user", "assistant", "system"] else "user"
+                if role == "human": role = "user"
+                if role == "ai": role = "assistant"
+                oai_messages.append({"role": role, "content": getattr(msg, "content", "")})
+            else:
+                oai_messages.append({"role": "user", "content": str(msg)})
+
+        schema = CategorizerDecisionLLMOutput.model_json_schema()
+        # Remove title which sometimes causes issues with structured outputs
+        if "title" in schema:
+            del schema["title"]
+
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=oai_messages,
+            temperature=0.0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "CategorizerDecisionLLMOutput",
+                    "schema": schema,
+                    "strict": True
+                }
+            }
+        )
         
-        if result.decision == "unknown" or result.confidence <= 0.5:
-            next_agent = "InformationGatherer"
-        elif result.decision == "single":
+        content = completion.choices[0].message.content
+        parsed = json.loads(content)
+        decision = parsed.get("decision", "multiple")
+        
+        result = CategorizerDecisionClass(decision=decision)
+        
+        if result.decision == "single":
             next_agent = "ContractorCategorizer"
         else:
             next_agent = "MultiTaskArchitect"
@@ -88,7 +155,7 @@ def categorizer_node(state: GraphState) -> dict:
     except Exception as e:
         print(f"Categorizer error: {e}")
         return {
-            "CategorizerDecision": CategorizerDecisionOutput(decision="multiple", confidence=0.1),
+            "CategorizerDecision": CategorizerDecisionClass(decision="multiple"),
             "next_agent": "InformationGatherer"
         }
 
@@ -328,19 +395,27 @@ def route(state: GraphState) -> str:
 
 def supervisor_node(state: GraphState) -> dict:
     next_agent = state.get("next_agent")
-    if not next_agent or next_agent == "determine_number_of_subtasks":
-        return {"next_agent": "Categorizer"}
+    if not next_agent or next_agent == "determine_number_of_subtasks" or next_agent == "Categorizer" and not state.get("CategorizerDecision"):
+        # If it was Categorizer but we haven't done DataValidator yet, maybe we should start at DataValidator
+        return {"next_agent": "DataValidator"}
     return {"next_agent": next_agent}
 
 # --- Build Graph ---
 workflow = StateGraph(GraphState)
 workflow.add_node("Supervisor", supervisor_node)
+workflow.add_node("DataValidator", data_validator_node)
 workflow.add_node("Categorizer", categorizer_node)
 workflow.add_node("InformationGatherer", information_gatherer_node)
 workflow.add_node("ContractorCategorizer", contractor_categorizer_node)
 workflow.add_node("MultiTaskArchitect", multi_task_architect_node)
 workflow.add_node("IntakeCoordinator", intake_node)
 workflow.add_node("TenderCreator", tender_creator_node)
+
+def data_validator_edge(state: GraphState) -> str:
+    next_agent = state.get("next_agent")
+    if next_agent == "DataValidator":
+        return END # Pause to wait for user reply (missing_context)
+    return next_agent
 
 def categorizer_edge(state: GraphState) -> str:
     return state.get("next_agent", "Categorizer")
@@ -367,7 +442,13 @@ workflow.set_entry_point("Supervisor")
 workflow.add_conditional_edges(
     "Supervisor", 
     route,
-    ["Categorizer", "InformationGatherer", "ContractorCategorizer", "MultiTaskArchitect", "IntakeCoordinator", "TenderCreator"]
+    ["DataValidator", "Categorizer", "InformationGatherer", "ContractorCategorizer", "MultiTaskArchitect", "IntakeCoordinator", "TenderCreator"]
+)
+
+workflow.add_conditional_edges(
+    "DataValidator",
+    data_validator_edge,
+    ["Categorizer", END]
 )
 
 workflow.add_conditional_edges(
@@ -432,7 +513,7 @@ class Engine:
         final_state = app.invoke(input_state)
         
         logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
-        
+        # todo andrew need to handle it properly 
         new_messages = []
         for msg in final_state["messages"]:
             if isinstance(msg, HumanMessage):
@@ -444,10 +525,13 @@ class Engine:
             elif isinstance(msg, ToolMessage):
                 new_messages.append({"role": "tool", "content": str(msg.content)})
             else:
-                new_messages.append({"role": msg.type if hasattr(msg, "type") else "unknown", "content": str(msg.content)})
+                if isinstance(msg, dict):
+                    new_messages.append({"role": msg.get("role", "unknown"), "content": str(msg.get("content", ""))})
+                else:
+                    new_messages.append({"role": msg.type if hasattr(msg, "type") else "unknown", "content": str(getattr(msg, "content", ""))})
         
         state.messages = new_messages
-        state.next_step = final_state.get("next_agent", "Categorizer")
+        state.next_step = final_state.get("next_agent", "DataValidator")
         
         if "sub_tasks" in final_state:
             state.sub_tasks = final_state["sub_tasks"]

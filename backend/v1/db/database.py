@@ -248,7 +248,6 @@ def init_db():
             SESSION_ID NVARCHAR(255),
             PROJECT_ID INT,
             CATEGORY_ID INT,
-            CONFIDENCE_SCORE FLOAT,
             SUBTASK_STATUS_ID INT,
             CONTRACTOR_ID INT,
             TENDER_ID INT,
@@ -284,13 +283,7 @@ def init_db():
         )
     """)
     
-    # Ensure ConfidenceScore column exists
-    cursor.execute("""
-        IF COL_LENGTH('dbo.TestResults', 'ConfidenceScore') IS NULL
-        BEGIN
-            ALTER TABLE dbo.TestResults ADD ConfidenceScore FLOAT DEFAULT 0.0
-        END
-    """)
+
     
     conn.commit()
     cursor.close()
@@ -344,7 +337,7 @@ def create_sub_task(project_id: int, category_id: int, status_id: int = None, co
         print(f"Error creating sub task: {e}")
         return None
 
-def log_test_sub_task(session_id: str, category_id: int, confidence_score: float, comments: str = None):
+def log_test_sub_task(session_id: str, category_id: int, comments: str = None):
     """
     Logs the AI node evaluation into the TEST_SUB_TASKS table.
     """
@@ -353,9 +346,9 @@ def log_test_sub_task(session_id: str, category_id: int, confidence_score: float
         cursor = conn.cursor()
         
         cursor.execute("""
-            INSERT INTO dbo.TEST_SUB_TASKS (SESSION_ID, CATEGORY_ID, CONFIDENCE_SCORE, comments)
-            VALUES (?, ?, ?, ?)
-        """, (session_id, category_id, confidence_score, comments))
+            INSERT INTO dbo.TEST_SUB_TASKS (SESSION_ID, CATEGORY_ID, comments)
+            VALUES (?, ?, ?)
+        """, (session_id, category_id, comments))
         
         conn.commit()
         cursor.close()
@@ -589,14 +582,14 @@ def insert_test_run(test_type: str, accuracy: float, avg_time: float) -> int:
         print(f"Error inserting test run: {e}")
         return None
 
-def insert_test_result(run_id: int, input_text: str, expected: str, actual: str, exec_time: float, is_correct: bool, confidence_score: float = 0.0):
+def insert_test_result(run_id: int, input_text: str, expected: str, actual: str, exec_time: float, is_correct: bool):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO dbo.TestResults (RunID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect, ConfidenceScore)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (run_id, input_text, expected, actual, exec_time, is_correct, confidence_score))
+            INSERT INTO dbo.TestResults (RunID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (run_id, input_text, expected, actual, exec_time, is_correct))
         conn.commit()
         cursor.close()
         conn.close()
@@ -629,7 +622,7 @@ def get_test_results_by_run(run_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT ResultID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect, ConfidenceScore FROM dbo.TestResults WHERE RunID = ?", (run_id,))
+        cursor.execute("SELECT ResultID, InputText, ExpectedOutcome, ActualOutcome, ExecutionTimeMs, IsCorrect FROM dbo.TestResults WHERE RunID = ?", (run_id,))
         rows = cursor.fetchall()
         results = []
         for row in rows:
@@ -639,8 +632,7 @@ def get_test_results_by_run(run_id: int):
                 "ExpectedOutcome": row.ExpectedOutcome,
                 "ActualOutcome": row.ActualOutcome,
                 "ExecutionTimeMs": row.ExecutionTimeMs,
-                "IsCorrect": bool(row.IsCorrect),
-                "ConfidenceScore": row.ConfidenceScore if hasattr(row, 'ConfidenceScore') else 0.0
+                "IsCorrect": bool(row.IsCorrect)
             })
         cursor.close()
         conn.close()
