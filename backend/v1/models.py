@@ -48,3 +48,4 @@ class AgentState(BaseModel):
     ip_address: Optional[str] = None
     CategorizerDecision: Optional[CategorizerDecisionClass] = None
     project_id: Optional[int] = None
+    is_finished: bool = False

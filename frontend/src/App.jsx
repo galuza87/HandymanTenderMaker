@@ -12,7 +12,6 @@ function App() {
   const [regData, setRegData] = useState({ name: '', last_name: '', phone: '', additional_phone: '', email: '', address: '' });
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [clientProjects, setClientProjects] = useState([]);
 
   // App States
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' or 'directory'
@@ -23,7 +22,9 @@ function App() {
     }
   ]);
   const [input, setInput] = useState('');
-  const [sessionId] = useState(() => Math.random().toString(36).substring(7));
+  const [sessionId, setSessionId] = useState(() => Math.random().toString(36).substring(7));
+  const [isFinished, setIsFinished] = useState(false);
+  const [conversations, setConversations] = useState([]);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -88,20 +89,53 @@ function App() {
   // Fetch Projects when logged in
   useEffect(() => {
     if (loggedInClient) {
-      const fetchProjects = async () => {
+
+      const fetchConversations = async () => {
         try {
-          const res = await fetch(`/api/client/${loggedInClient.id}/projects`);
+          const res = await fetch(`/api/client/${loggedInClient.id}/conversations`);
           if (res.ok) {
             const data = await res.json();
-            setClientProjects(data);
+            setConversations(data);
           }
         } catch (e) {
           console.error(e);
         }
       };
-      fetchProjects();
+      fetchConversations();
     }
   }, [loggedInClient]);
+
+  const loadConversation = async (id) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessionId(id);
+        setIsFinished(data.is_finished || false);
+        
+        const loadedMessages = data.messages
+          .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && msg.content && msg.content.trim() !== '')
+          .map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }));
+        setMessages(loadedMessages);
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const startNewConversation = () => {
+    setSessionId(Math.random().toString(36).substring(7));
+    setIsFinished(false);
+    setMessages([
+      {
+        role: 'assistant',
+        content: '👋 **Welcome to the Handyman & Contractor Bid Wizard!** 🛠️\n\nI can help you draft professional quote prompts, handyman service requests, and subcontractor tenders.\n\nWould you like to build a **Handyman Service Request**, a **Construction Quote**, or a **Subcontractor Tender**? Tell me what you need done!'
+      }
+    ]);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -222,6 +256,14 @@ function App() {
       if (!response.ok) throw new Error('Network error');
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+      
+      // refresh conversations list
+      try {
+        const res = await fetch(`/api/client/${loggedInClient.id}/conversations`);
+        if (res.ok) {
+          setConversations(await res.json());
+        }
+      } catch(e) {}
     } catch (error) {
       setMessages(prev => [...prev, { role: 'assistant', content: '❌ **Error**: Could not connect to the wizard backend server. Please verify the backend is running.' }]);
     } finally {
@@ -340,18 +382,24 @@ function App() {
           </button>
         </div>
 
-        <div className="sidebar-content">
-          <h3 className="sidebar-title">Recent Projects</h3>
-          {clientProjects.length === 0 ? (
-            <div className="no-projects">No recent projects. Start a new request!</div>
+        <div className="sidebar-content" style={{marginTop: '20px'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <h3 className="sidebar-title">Past Conversations</h3>
+            <button onClick={startNewConversation} style={{background: 'transparent', border: 'none', color: '#7FC8FF', cursor: 'pointer', fontSize: '1.2em'}} title="New Chat">⊕</button>
+          </div>
+          {conversations.length === 0 ? (
+            <div className="no-projects">No past conversations.</div>
           ) : (
             <div className="project-list">
-              {clientProjects.map(p => (
-                <div key={p.id} className="project-item">
-                  <div className="project-icon">📝</div>
+              {conversations.map(c => (
+                <div key={c.session_id} className={`project-item ${sessionId === c.session_id ? 'selected' : ''}`} onClick={() => loadConversation(c.session_id)} style={{cursor: 'pointer', background: sessionId === c.session_id ? 'rgba(127, 200, 255, 0.1)' : 'transparent'}}>
+                  <div className="project-icon">💬</div>
                   <div className="project-details">
-                    <div className="project-desc">{p.description || 'New Project Request'}</div>
-                    <div className="project-date">{new Date(p.created_date).toLocaleDateString()}</div>
+                    <div className="project-desc">{c.last_message || 'New Chat'}</div>
+                    <div className="project-date" style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>{new Date(c.updated_at).toLocaleDateString()}</span>
+                      {c.is_finished && <span style={{color: '#ffb74d'}}>✓</span>}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -432,12 +480,18 @@ function App() {
             </div>
 
             <div className="input-area">
-              <form onSubmit={handleSubmit} className="input-form">
-                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe your request..." disabled={isLoading} autoFocus />
-                <button type="submit" className="submit-btn" disabled={!input.trim() || isLoading}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
-              </form>
+              {isFinished ? (
+                <div style={{textAlign: 'center', padding: '15px', color: '#ffb74d', fontWeight: 'bold', background: 'rgba(255, 183, 77, 0.1)', borderRadius: '12px'}}>
+                  🔒 Tender Sent - Conversation Closed
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="input-form">
+                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe your request..." disabled={isLoading} autoFocus />
+                  <button type="submit" className="submit-btn" disabled={!input.trim() || isLoading}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  </button>
+                </form>
+              )}
             </div>
           </main>
         )}

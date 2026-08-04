@@ -17,8 +17,8 @@ from backend.v1.models import AgentState, CategorizerDecisionClass
 from backend.v1.db.database import get_all_categories_with_subs, create_project, create_sub_task, log_test_sub_task, get_main_address_by_client_id
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
 
-# --- In-memory session store      ---
-sessions: Dict[str, AgentState] = {}
+# --- In-memory session store removed  ---
+# State is now persisted via DB in main.py
 
 def get_llm() -> ChatOpenAI:
     return ChatOpenAI(
@@ -61,6 +61,7 @@ class GraphState(TypedDict, total=False):
     user_id: Optional[int]
     CategorizerDecision: CategorizerDecisionClass
     project_id: Optional[int]
+    is_finished: bool
 
 # --- Agent Nodes ---
 def data_validator_node(state: GraphState) -> dict:
@@ -194,7 +195,7 @@ def contractor_categorizer_node(state: GraphState) -> dict:
         "Use the fetch_available_categories tool to see the available trades.\n"
         "Identify the EXACT category ID that matches the user's request.\n"
         "If you are unsure, ask the user a clarifying question (do NOT append ALL_DONE).\n"
-        "If you have identified the category ID, tell the user you've categorized it, and append ALL_DONE."
+        "If you have identified the category ID, output it in the format: ALL_DONE_CATEGORY_<ID> (e.g. ALL_DONE_CATEGORY_12)"
     )
     
     agent = create_agent(model=llm, tools=[fetch_available_categories], prompt=system_prompt)
@@ -205,19 +206,34 @@ def contractor_categorizer_node(state: GraphState) -> dict:
         content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
         if isinstance(content_str, str) and "ALL_DONE" in content_str:
-            clean_content = content_str.replace("ALL_DONE", "").strip()
+            import re
+            match = re.search(r'ALL_DONE_CATEGORY_(\d+)', content_str)
+            identified_categories = list(state.get("identified_categories") or [])
+            if match:
+                cat_id = int(match.group(1))
+                identified_categories.append({"category_id": cat_id, "name": "Categorized by AI"})
+            
+            clean_content = re.sub(r'ALL_DONE_CATEGORY_\d+', '', content_str)
+            clean_content = clean_content.replace("ALL_DONE", "").strip()
+            
             if hasattr(last_message, 'content'):
                 result["messages"][-1] = AIMessage(content=clean_content)
             else:
                 result["messages"][-1]["content"] = clean_content
             next_agent = "IntakeCoordinator"
+            
+            return {
+                "messages": result["messages"],
+                "identified_categories": identified_categories,
+                "next_agent": next_agent
+            }
         else:
             next_agent = "ContractorCategorizer"
             
-        return {
-            "messages": result["messages"],
-            "next_agent": next_agent
-        }
+            return {
+                "messages": result["messages"],
+                "next_agent": next_agent
+            }
     except Exception as e:
         return {"messages": state["messages"] + [{"role": "assistant", "content": f"ContractorCategorizer error: {e}"}]}
 
@@ -364,9 +380,16 @@ def tender_creator_node(state: GraphState) -> dict:
         last_message = result["messages"][-1]
         tender_text = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
-        cat_id = 1
-        if state.get("identified_categories"):
-            cat_id = state.get("identified_categories")[0].get("category_id", 1)
+        cat_id = None
+        try:
+            categories = get_all_categories_with_subs()
+            if categories:
+                cat_id = categories[0]['id']
+        except Exception:
+            cat_id = 1
+            
+        if state.get("identified_categories") and len(state.get("identified_categories")) > 0:
+            cat_id = state.get("identified_categories")[0].get("category_id", cat_id)
             
         create_sub_task(project_id=project_id, category_id=cat_id, comments=tender_text)
         new_messages.append(AIMessage(content="Your tender has been created and sent to contractors."))
@@ -379,14 +402,22 @@ def tender_creator_node(state: GraphState) -> dict:
             last_message = result["messages"][-1]
             tender_text = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
             
-            cat_id = task.get('category_id', 1)
+            cat_id = task.get('category_id')
+            if not cat_id:
+                try:
+                    categories = get_all_categories_with_subs()
+                    if categories:
+                        cat_id = categories[0]['id']
+                except Exception:
+                    cat_id = 1
             create_sub_task(project_id=project_id, category_id=cat_id, comments=tender_text)
             
         new_messages.append(AIMessage(content="All tenders have been created and sent to the respective contractors."))
         
     return {
         "messages": new_messages,
-        "next_agent": "Categorizer"
+        "next_agent": "Categorizer",
+        "is_finished": True
     }
 
 # --- Routing logic ---
@@ -489,9 +520,14 @@ class Engine:
             if msg.get("role") == "user":
                 lc_messages.append(HumanMessage(content=msg.get("content", "")))
             elif msg.get("role") == "assistant":
-                lc_messages.append(AIMessage(content=msg.get("content", "")))
+                kwargs = {"content": msg.get("content", "")}
+                if "tool_calls" in msg:
+                    kwargs["tool_calls"] = msg["tool_calls"]
+                lc_messages.append(AIMessage(**kwargs))
             elif msg.get("role") == "system":
                 lc_messages.append(SystemMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "tool":
+                lc_messages.append(ToolMessage(content=msg.get("content", ""), tool_call_id=msg.get("tool_call_id", "unknown")))
             else:
                 lc_messages.append(HumanMessage(content=str(msg.get("content", ""))))
                 
@@ -504,8 +540,9 @@ class Engine:
             "ip_address": state.ip_address,
             "session_id": state.session_id,
             "user_id": state.user_id,
-            "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else {},
-            "project_id": state.project_id
+            "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else None,
+            "project_id": state.project_id,
+            "is_finished": getattr(state, "is_finished", False)
         }
         
         logging.info(f"--- [Engine Process Start] next_step: {state.next_step} ---")
@@ -519,11 +556,14 @@ class Engine:
             if isinstance(msg, HumanMessage):
                 new_messages.append({"role": "user", "content": str(msg.content)})
             elif isinstance(msg, AIMessage):
-                new_messages.append({"role": "assistant", "content": str(msg.content)})
+                d = {"role": "assistant", "content": str(msg.content)}
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    d["tool_calls"] = msg.tool_calls
+                new_messages.append(d)
             elif isinstance(msg, SystemMessage):
                 new_messages.append({"role": "system", "content": str(msg.content)})
             elif isinstance(msg, ToolMessage):
-                new_messages.append({"role": "tool", "content": str(msg.content)})
+                new_messages.append({"role": "tool", "content": str(msg.content), "tool_call_id": getattr(msg, "tool_call_id", "unknown")})
             else:
                 if isinstance(msg, dict):
                     new_messages.append({"role": msg.get("role", "unknown"), "content": str(msg.get("content", ""))})
@@ -535,9 +575,17 @@ class Engine:
         
         if "sub_tasks" in final_state:
             state.sub_tasks = final_state["sub_tasks"]
-        if "CategorizerDecision" in final_state:
+        if "CategorizerDecision" in final_state and final_state["CategorizerDecision"]:
             state.CategorizerDecision = final_state["CategorizerDecision"]
-        if "project_id" in final_state:
+        else:
+            state.CategorizerDecision = None
+            
+        if "project_id" in final_state and final_state["project_id"]:
             state.project_id = final_state["project_id"]
+        else:
+            state.project_id = None
+            
+        if "is_finished" in final_state:
+            state.is_finished = final_state["is_finished"]
         
         return state

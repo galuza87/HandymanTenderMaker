@@ -13,8 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Internal imports             --- #
 from backend.v1.models import ChatRequest, ChatResponse, AgentState, LoginRequest, RegisterRequest, UpdateClientRequest
-from backend.v1.engine import sessions
-from backend.v1.db.database import get_all_categories_with_subs, get_all_contractors, search_categories_and_subs, insert_prompt_log, init_db, get_client_by_phone, create_client, get_projects_by_client_id, update_client, get_client_by_id
+from backend.v1.db.database import get_all_categories_with_subs, get_all_contractors, search_categories_and_subs, insert_prompt_log, init_db, get_client_by_phone, create_client, get_projects_by_client_id, update_client, get_client_by_id, get_conversation, save_conversation, get_conversations_by_client_id
 api_key = os.getenv("LANGSMITH_API_KEY")
 
 # --- Harness algorithm version    --- #
@@ -79,6 +78,20 @@ def get_client_projects(client_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/client/{client_id}/conversations")
+def get_client_conversations(client_id: int):
+    try:
+        return get_conversations_by_client_id(client_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversations/{session_id}")
+def get_conversation_endpoint(session_id: str):
+    state_json = get_conversation(session_id)
+    if not state_json:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return state_json
+
 @app.put("/api/client/{client_id}")
 def update_client_endpoint(client_id: int, req: UpdateClientRequest):
     success = update_client(
@@ -118,11 +131,16 @@ def get_contractors():
 async def chat_endpoint(req: ChatRequest, request: Request):
     session_id = req.session_id
     client_ip = request.client.host if request.client else "unknown"
-    # see what this session is all about 
-    if session_id not in sessions:
-        sessions[session_id] = AgentState(messages=[], session_id=session_id, ip_address=client_ip)
+    
+    # Load session state from DB
+    state_dict = get_conversation(session_id)
+    if not state_dict:
+        state = AgentState(messages=[], session_id=session_id, ip_address=client_ip)
+    else:
+        if state_dict.get("CategorizerDecision") == {}:
+            state_dict["CategorizerDecision"] = None
+        state = AgentState(**state_dict)
         
-    state = sessions[session_id]
     state.ip_address = client_ip
     if req.user_id is not None:
         state.user_id = req.user_id
@@ -144,7 +162,14 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     old_msg_count = len(state.messages)
     
     new_state = engine.process(state)
-    sessions[session_id] = new_state
+    
+    # Save session state to DB
+    save_conversation(
+        session_id=session_id, 
+        client_id=new_state.user_id if new_state.user_id else 0, 
+        state_json=new_state.model_dump_json(), 
+        is_finished=new_state.is_finished
+    )
     
     # Gather all non-empty assistant messages generated in this turn
     new_ai_messages = [
