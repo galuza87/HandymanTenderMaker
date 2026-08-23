@@ -3,7 +3,14 @@ from pydantic import BaseModel
 from typing import List, Optional
 import time
 
-from backend.v1.engine import Engine
+import os
+
+ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v2')
+if ALGORITHM_VERSION == 'v2':
+    from backend.v2.engine import Engine
+else:
+    from backend.v1.engine import Engine
+
 from backend.v1.models import AgentState
 from backend.v1.db.database import insert_test_run, insert_test_result, get_test_runs, get_test_results_by_run
 
@@ -70,7 +77,8 @@ def run_tests(request: TestRunRequest):
     avg_time = total_time / len(request.cases)
     
     # Save to database
-    run_id = insert_test_run(request.test_type, accuracy, avg_time)
+    test_type_label = f"{request.test_type} ({ALGORITHM_VERSION})"
+    run_id = insert_test_run(test_type_label, accuracy, avg_time)
     if run_id:
         for res in results:
             insert_test_result(
