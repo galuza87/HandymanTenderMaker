@@ -1,0 +1,34 @@
+[
+  {
+    "id": "wf_chat",
+    "name": "Core Chat Journey",
+    "steps": [
+      {
+        "id": "wf_chat_s1",
+        "name": "User loads website",
+        "targets": []
+      },
+      {
+        "id": "wf_chat_s2",
+        "name": "User interacts with Chat",
+        "targets": ["POST /chat"]
+      }
+    ]
+  },
+  {
+    "id": "wf_auth",
+    "name": "Authentication Journey",
+    "steps": [
+      {
+        "id": "wf_auth_s1",
+        "name": "User visits Login page",
+        "targets": []
+      },
+      {
+        "id": "wf_auth_s2",
+        "name": "User submits credentials",
+        "targets": ["POST /api/login"]
+      }
+    ]
+  }
+]

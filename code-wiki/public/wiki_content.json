@@ -1,0 +1,86 @@
+{
+  "about": "DynamicPromptWizard is an advanced platform that processes client requests using a multi-agent LLM workflow. It automatically categorizes requests, gathers required information, evaluates missing details, and routes tasks to specialized contractors.",
+  "tools": [
+    {
+      "name": "FastAPI",
+      "description": "High-performance Python web framework used for the core backend routing and APIs."
+    },
+    {
+      "name": "LangGraph",
+      "description": "Framework for building stateful, multi-actor applications with LLMs. Powers the core workflow engine."
+    },
+    {
+      "name": "React & Vite",
+      "description": "Modern frontend stack used for building the user interface and this visual Code Atlas."
+    },
+    {
+      "name": "MS SQL Server",
+      "description": "Relational database used for storing clients, projects, categories, contractors, and conversation states."
+    }
+  ],
+  "stackTrace": [
+    {
+      "id": "st1",
+      "name": "POST /chat",
+      "input": "ChatRequest (session_id, message, user_id)",
+      "output": "AgentState initialized",
+      "description": "The main API entry point. Receives the user message, initializes or loads the AgentState from the database, and passes it to the Engine."
+    },
+    {
+      "id": "st2",
+      "name": "Engine.process()",
+      "input": "AgentState",
+      "output": "AgentState (updated)",
+      "description": "Compiles the LangGraph workflow and invokes the state graph, starting the multi-agent execution."
+    },
+    {
+      "id": "st3",
+      "name": "data_validator_node",
+      "input": "AgentState",
+      "output": "{ messages: [validation_msg] }",
+      "description": "Validates if the user input contains enough meaningful information to proceed or if it's too vague."
+    },
+    {
+      "id": "st4",
+      "name": "categorizer_node",
+      "input": "AgentState",
+      "output": "{ CategorizerDecision, identified_categories }",
+      "description": "Categorizes the user's request into predefined categories (e.g., Plumbing, Electrical, General)."
+    },
+    {
+      "id": "st5",
+      "name": "information_gatherer_node",
+      "input": "AgentState",
+      "output": "{ messages, collected_details }",
+      "description": "If information is missing, this node formulates questions to ask the user to clarify the request."
+    },
+    {
+      "id": "st6",
+      "name": "contractor_categorizer_node",
+      "input": "AgentState",
+      "output": "{ sub_tasks }",
+      "description": "Breaks down a complex project into sub-tasks assigning a specific contractor type to each."
+    },
+    {
+      "id": "st7",
+      "name": "multi_task_architect_node",
+      "input": "AgentState",
+      "output": "{ messages: [architect_msg] }",
+      "description": "For complex projects involving multiple contractors, this node architects the overall solution and explains it to the client."
+    },
+    {
+      "id": "st8",
+      "name": "intake_node",
+      "input": "AgentState",
+      "output": "{ client_info, project_id }",
+      "description": "Gathers necessary client intake info (Name, Phone, Address) before creating official tenders."
+    },
+    {
+      "id": "st9",
+      "name": "tender_creator_node",
+      "input": "AgentState",
+      "output": "{ messages, is_finished: True }",
+      "description": "Final node. Generates the official tender documents and saves them to the database, concluding the workflow."
+    }
+  ]
+}
