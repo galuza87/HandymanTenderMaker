@@ -17,9 +17,11 @@ from backend.v1.db.database import get_all_categories_with_subs, get_all_contrac
 api_key = os.getenv("LANGSMITH_API_KEY")
 
 # --- Harness algorithm version    --- #
-ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v1') # Get the active version or default to v1
+ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v2') # Get the active version or default to v2
 if ALGORITHM_VERSION == 'v1':
     from backend.v1.engine import Engine
+elif ALGORITHM_VERSION == 'v2':
+    from backend.v2.engine import Engine
 else:
     raise ValueError(f"Unknown version: {ALGORITHM_VERSION}")
 # why do we need init db ?

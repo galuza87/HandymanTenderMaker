@@ -23,9 +23,11 @@ from backend.v1.engine import sessions
 from backend.v1.models import AgentState
 
 # --- Harness algorithm version    --- #
-ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v1') # Get the active version or default to v1
+ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v2') # Get the active version or default to v2
 if ALGORITHM_VERSION == 'v1':
     from backend.v1.engine import Engine
+elif ALGORITHM_VERSION == 'v2':
+    from backend.v2.engine import Engine
 else:
     raise ValueError(f"Unknown version: {ALGORITHM_VERSION}")
 
