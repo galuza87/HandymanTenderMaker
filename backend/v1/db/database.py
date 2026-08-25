@@ -13,7 +13,6 @@ db_trusted = os.getenv('DB_TRUSTED_CONNECTION', 'yes')
 db_trust_cert = os.getenv('DB_TRUST_SERVER_CERTIFICATE', 'yes')
 
 if db_driver and db_server and db_name:
-    print("Creating the DB string dynamicaly")
     DB_CONN_STR = f"DRIVER={db_driver};SERVER={db_server};DATABASE={db_name};Trusted_Connection={db_trusted};TrustServerCertificate={db_trust_cert};"
 else:
     DB_CONN_STR = os.getenv('DB_CONN_STR')
@@ -22,7 +21,6 @@ def get_db_connection():
     """
     Establishes and returns a connection to the HandymanDB.
     """
-    print(DB_CONN_STR)
     return pyodbc.connect(DB_CONN_STR)
 
 def get_all_categories_with_subs():
