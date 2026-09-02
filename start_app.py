@@ -47,6 +47,10 @@ def main():
     backend_dir = os.path.join(base_dir, "backend")
     frontend_dir = os.path.join(base_dir, "frontend")
     
+    # Initialize processes as None
+    backend_process = None
+    frontend_process = None
+    
     # Smartly resolve the correct python executable
     venv_python = os.path.join(base_dir, ".venv", "Scripts", "python.exe")
     if os.path.exists(venv_python) and sys.prefix == sys.base_prefix:
@@ -57,22 +61,32 @@ def main():
         print(f"-> Using Python executable: {python_exe}")
     
     try:
-        # Start the Python backend using the resolved executable
+        # Start the Python backend using the resolved executable from project root
+        # This allows imports like "from backend.bootstrap" to work correctly
+        print("Starting backend...")
         backend_process = subprocess.Popen(
-            [python_exe, "main.py"],
-            cwd=backend_dir
+            [python_exe, "-m", "backend.main"],
+            cwd=base_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
-        print("-> Backend started (main.py)")
+        print("-> Backend started (backend.main)")
+        time.sleep(2)  # Give backend time to start
         
         # Start the React frontend
+        print("Starting frontend...")
         frontend_process = subprocess.Popen(
-            ["npm", "run", "dev"],
+            "npm run dev",
             cwd=frontend_dir,
             shell=True
         )
         print("-> Frontend started (npm run dev)")
+        time.sleep(3)  # Give frontend time to start
         
-        print("\nBoth servers are running. Press Ctrl+C to stop both.")
+        print("\n✅ Both servers are running:")
+        print("   - Frontend App: http://localhost:5173")
+        print("   - API Docs: http://localhost:8000/docs (test endpoints here)")
+        print("\nPress Ctrl+C to stop both.")
         
         # Keep the main script alive to monitor the sub-processes
         while True:
@@ -80,8 +94,10 @@ def main():
             
     except KeyboardInterrupt:
         print("\nStopping servers...")
-        backend_process.terminate()
-        frontend_process.terminate()
+        if backend_process:
+            backend_process.terminate()
+        if frontend_process:
+            frontend_process.terminate()
         sys.exit(0)
 
 if __name__ == "__main__":
