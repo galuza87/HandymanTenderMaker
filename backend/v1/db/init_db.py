@@ -233,6 +233,16 @@ def build_schema_and_seed():
         print(f"Error seeding database: {e}", file=sys.stderr)
         sys.exit(1)
 
+
+def init_db():
+    """Initialize the entire database schema and seed data."""
+    try:
+        create_database()
+        build_schema_and_seed()
+    except Exception as e:
+        print(f"Error initializing database: {e}", file=sys.stderr)
+
+
 if __name__ == "__main__":
     create_database()
     build_schema_and_seed()
