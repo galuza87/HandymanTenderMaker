@@ -1,15 +1,29 @@
-# RAG System
+# Agent baesed "Handyman Tender Maker" System
 
-A local **Retrieval-Augmented Generation** system that answers questions by retrieving relevant documents and grounding answers in retrieved context.
+An agent based chat bot system for creation of tenders for house repairs.  
+The system proactively collects all the needed information from the customer and creates a tender document.  
+Contractors get notified when a suitable tender arrives to the system, and make their bids or ask for more information, eventualy accepting the tender.  
+The system implements a self healing mechanism:  
+each time a new tender is being created it reviews most similar successful tenders for missing information that the contractors needed.  
+
+# Team
+
+Galuza Andrew [LinkedIn](https://www.linkedin.com/in/andrew-galuza-61a3a712a/)
+Hudozhnik Yegor [LinkedIn](https://www.linkedin.com/in/yegor-hudozhnik/)
 
 ## Why This Project?
 
-Traditional LLMs hallucinate when asked about domain-specific information they weren't trained on. RAG solves this by:
-1. Embedding user documents into a vector database
-2. Retrieving relevant documents when a question is asked
-3. Feeding those documents to an LLM for grounded answers
+Regular chatbots implement mostly RAG, which insures stable data retrieving in a conversational manner. In this project we are aiming to solve the real world problem with advanced way, by introducing alive self healing model.  
+We try not only to diminish halusination, but also provide an approach to fit the uncertainty of real world tasks.  
+  
+## How?
 
-No hallucination, no API costs, fully local.
+We would like to cover various modern technologies applicable for the problem.  
+Some of them are directly the way of implementation of the harness, like LangGraph and DeepAgents. And some of them are tools around it, like LangSmith, Kafka, Vector Databases, efficient use of coding using AI and exploring it's cons and pros.  
+  
+We adhere to implementing maintainable and sustainable code with clear structure that allows quick overview, easy testing and comfortable version management. 
+  
+All this will allow us eventualy to implement a scientific approach for measuring the differnt systems, to compare efficiency and relevancy of different components for the task. We will do this on hand regular metrics like token consumption and time efficiency as well as developing custom statistical metrics to measure the quality of produced contracts and conversations.   
 
 ---
 
@@ -18,9 +32,10 @@ No hallucination, no API costs, fully local.
 | Component | Choice | Why |
 |-----------|--------|-----|
 | **LLM** | Mistral 7B (local via LM Studio) | Fast (~15 tok/s), good instruction-following, fits 4GB VRAM |
-| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2) | Lightweight (~100MB), semantic quality |
-| **Vector DB** | ChromaDB | Simple, no infrastructure, good for prototyping |
-| **RAG Framework** | LangChain + LangGraph | Industry standard, integrates everything seamlessly |
+| **LLM** | Gemma 4 E2B-it-GGUF (local via LM Studio) | fits 4GB VRAM |
+| **Vector DB** | SQL Server 2025 | Simple |
+| **Framework v1** | LangChain + LangGraph | Industry standard, integrates everything seamlessly |
+| **Framework v2** | DeepAgents | Industry novelty, integrates everything even more seamlessly |
 | **Backend** | FastAPI | Async, auto-generated docs, modern Python |
 
 See **ARCHITECTURE.md** for detailed system design, data flow, and component interactions.
@@ -79,7 +94,7 @@ pip install pydantic python-dotenv requests
 
 ### 4. Set Up LM Studio
 1. Open LM Studio
-2. Download **Mistral 7B** (or your chosen model from PROGRESS.md)
+2. Download your chosen model 
 3. Load it in the "Local Server" tab
 4. Set **GPU layers: 12-15** (monitor with `nvidia-smi dmon -s u`)
 5. Start server (default: `localhost:1234`)
@@ -175,8 +190,7 @@ Should return `True`. If False, check NVIDIA drivers: `nvidia-smi`
 ## For More Details
 
 - **System Design:** Read **ARCHITECTURE.md**
-- **Working Progress & Decisions:** See **PROGRESS.md**
-- **Tech Choices & Alternatives:** Check PROGRESS.md session notes (logged as experiment tasks)
+- **Tech Choices & Alternatives:** Check PROGRESS.md 
 
 ---
 
@@ -190,9 +204,3 @@ Once running:
 
 ---
 
-## Contributing (Team Notes)
-
-- **Before work:** Read latest entries in PROGRESS.md
-- **After work:** Add session entry to PROGRESS.md (5 min, use template)
-- **Commit deps:** If you `pip install` anything new, run `pip freeze > requirements.txt` and commit it
-- **Collaborate:** Push + pull frequently; PROGRESS.md is your communication channel
