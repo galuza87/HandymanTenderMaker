@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from typing import TypedDict
-from backend.v1.models import CategorizerDecisionClass
+from backend.models import CategorizerDecisionClass
 
 # --- LangGraph State Definition ---
 class DataValidatorOutput(BaseModel):

@@ -15,20 +15,19 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 # --- Internal imports             --- #
-from backend.v1.db.database import (
+from backend.db import (
     create_client,
-    get_all_categories_with_subs,
+    get_all_categories,
     get_all_contractors,
     get_client_by_id,
     get_client_by_phone,
     get_conversation,
     get_conversations_by_client_id,
     get_projects_by_client_id,
-    init_db,
     save_conversation,
     update_client,
 )
-from backend.v1.models import (
+from backend.models import (
     AgentState,
     ChatRequest,
     ChatResponse,
@@ -68,7 +67,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
-        init_db()
+        pass
 
     # --- REST APIs for Auth --- #
     @app.post("/api/login")
@@ -138,7 +137,7 @@ def create_app() -> FastAPI:
     @app.get("/api/categories")
     def get_categories():
         try:
-            return get_all_categories_with_subs()
+            return get_all_categories()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch categories: {str(e)}")
 
@@ -209,7 +208,7 @@ def create_app() -> FastAPI:
         return ChatResponse(
             reply=reply_text,
             identified_categories=new_state.identified_categories,
-            sub_tasks=new_state.sub_tasks,
+            prompts=new_state.prompts,
             collected_details=new_state.collected_details,
         )
 

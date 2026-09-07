@@ -1,5 +1,5 @@
 """Repository for project data."""
-from backend.v1.db.connection import get_db_connection
+from backend.db.connection import get_db_connection
 
 
 def create_project(client_id: int, description: str, status_id: int = None, address_id: int = None, comments: str = None) -> int:
@@ -36,10 +36,10 @@ def get_projects_by_client_id(client_id: int):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT p.ID as project_id, p.created_date, p.general_description,
-                   s.ID as subtask_id, s.CATEGORY_ID, s.comments, mc.name as category_name
+                   pr.id as prompt_id, pr.category_id, pr.prompt_text, mc.name as category_name
             FROM dbo.PROJECTS p
-            LEFT JOIN dbo.SUB_TASKS s ON p.ID = s.PROJECT_ID
-            LEFT JOIN dbo.major_category mc ON s.CATEGORY_ID = mc.id
+            LEFT JOIN dbo.ProjectPrompts pr ON p.ID = pr.project_id
+            LEFT JOIN dbo.major_category mc ON pr.category_id = mc.id
             WHERE p.CLIENT_ID = ?
             ORDER BY p.created_date DESC
         """, (client_id,))
@@ -56,13 +56,13 @@ def get_projects_by_client_id(client_id: int):
                     "id": pid,
                     "created_date": row.created_date.isoformat() if row.created_date else None,
                     "description": row.general_description,
-                    "subtasks": []
+                    "prompts": []
                 }
-            if row.subtask_id:
-                projects[pid]["subtasks"].append({
-                    "id": row.subtask_id,
+            if row.prompt_id:
+                projects[pid]["prompts"].append({
+                    "id": row.prompt_id,
                     "category": row.category_name,
-                    "comments": row.comments
+                    "prompt_text": row.prompt_text
                 })
 
         return list(projects.values())

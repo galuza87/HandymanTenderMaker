@@ -32,7 +32,7 @@ class UpdateClientRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     identified_categories: List[Dict[str, Any]] = []
-    sub_tasks: List[Dict[str, Any]] = []
+    prompts: List[Dict[str, Any]] = []
     collected_details: Dict[str, str] = {}
 
 # Graph State 
@@ -41,7 +41,7 @@ class AgentState(BaseModel):
     session_id: Optional[str] = None
     user_id: Optional[int] = None
     identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing"}]
-    sub_tasks: List[Dict[str, Any]] = [] # e.g., [{"sub_task_id": 1, "description": "fix pipe", "category_id": 1}]
+    prompts: List[Dict[str, Any]] = [] # e.g., [{"id": 1, "category": "plumbing", "prompt_text": "fix pipe"}]
     collected_details: Dict[str, str] = {}
     client_info: Dict[str, str] = {}
     next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks

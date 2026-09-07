@@ -1,5 +1,5 @@
 """Repository for client and address data."""
-from backend.v1.db.connection import get_db_connection
+from backend.db.connection import get_db_connection
 
 
 def get_client_by_phone(phone: str):

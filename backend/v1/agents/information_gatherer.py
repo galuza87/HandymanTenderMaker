@@ -1,4 +1,4 @@
-from backend.v1.llm import get_llm
+from backend.llm import get_llm
 from backend.v1.agents.base import GraphState
 from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent as create_agent

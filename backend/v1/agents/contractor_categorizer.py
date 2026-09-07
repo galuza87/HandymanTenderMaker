@@ -1,5 +1,5 @@
 import re
-from backend.v1.llm import get_llm
+from backend.llm import get_llm
 from backend.v1.agents.base import GraphState
 from backend.v1.tools import fetch_available_categories
 from langchain_core.messages import AIMessage
