@@ -20,7 +20,7 @@ sys.path.insert(0, '..')
 
 from backend.v1 import engine
 from backend.v1.engine import sessions
-from backend.v1.models import AgentState
+from backend.models import AgentState
 
 # --- Harness algorithm version    --- #
 ALGORITHM_VERSION = os.getenv('ALGORITHM_VERSION', 'v2') # Get the active version or default to v2
@@ -90,7 +90,7 @@ def run_test_conversation():
     client_ip = "127.0.0.1"
     
     # Mock save_client_and_offer to capture what gets written to the database
-    import backend.v1.db.database
+    import backend.db
     import backend.v1.fallback_engine
     
     captured_data = {
@@ -104,7 +104,7 @@ def run_test_conversation():
         captured_data["collected_details"] = dict(offer_details)
         return True
         
-    backend.v1.db.database.save_client_and_offer = mock_save
+    backend.db.save_client_and_offer = mock_save
     backend.v1.fallback_engine.save_client_and_offer = mock_save
     try:
         import backend.v1.engine

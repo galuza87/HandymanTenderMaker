@@ -1,7 +1,7 @@
 import re
-from backend.v1.llm import get_llm
+from backend.llm import get_llm
 from backend.v1.agents.base import GraphState
-from backend.v1.db.database import create_project
+from backend.db import create_project
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import create_react_agent as create_agent

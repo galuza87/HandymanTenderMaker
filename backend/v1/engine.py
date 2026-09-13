@@ -2,7 +2,7 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 # --- Internal imports             ---
-from backend.v1.models import AgentState
+from backend.models import AgentState
 from backend.v1.graph import app
 
 # --- Engine Wrapper ---

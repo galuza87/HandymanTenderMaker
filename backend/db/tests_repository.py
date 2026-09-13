@@ -1,5 +1,5 @@
 """Repository for test run and result data."""
-from backend.v1.db.connection import get_db_connection
+from backend.db.connection import get_db_connection
 
 
 def insert_test_run(test_type: str, accuracy: float, avg_time: float) -> int:

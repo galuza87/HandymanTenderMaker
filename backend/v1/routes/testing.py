@@ -11,8 +11,8 @@ if ALGORITHM_VERSION == 'v2':
 else:
     from backend.v1.engine import Engine
 
-from backend.v1.models import AgentState
-from backend.v1.db.database import insert_test_run, insert_test_result, get_test_runs, get_test_results_by_run
+from backend.models import AgentState
+from backend.db import insert_test_run, insert_test_result, get_test_runs, get_test_results_by_run
 
 router = APIRouter()
 

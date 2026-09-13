@@ -2,7 +2,7 @@ import json
 from openai import OpenAI
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
 from backend.v1.agents.base import GraphState, CategorizerDecisionLLMOutput
-from backend.v1.models import CategorizerDecisionClass
+from backend.models import CategorizerDecisionClass
 
 def categorizer_node(state: GraphState) -> dict:
     client = OpenAI(base_url=LM_STUDIO_URL, api_key=LM_STUDIO_API_KEY)

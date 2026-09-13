@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langsmith import evaluate, Client
 from backend.v1.engine import Engine, get_llm
-from backend.v1.models import AgentState
+from backend.models import AgentState
 
 # Ensure we have our environment variables loaded
 from dotenv import load_dotenv

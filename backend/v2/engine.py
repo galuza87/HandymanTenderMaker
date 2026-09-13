@@ -10,52 +10,44 @@ from langchain_core.tools import tool, StructuredTool
 from deepagents import create_deep_agent
 
 # --- Reference from v1 to prevent code duplication ---
-from backend.v1.models import AgentState, CategorizerDecisionClass
-from backend.v1.db.database import (
-    get_all_categories_with_subs,
+from backend.models import AgentState, CategorizerDecisionClass
+from backend.db import (
+    get_all_categories,
     create_project,
-    create_sub_task
+    create_project_prompt
 )
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
+from backend.llm import get_llm
 
 logger = logging.getLogger(__name__)
 
-def get_llm() -> ChatOpenAI:
-    """Returns the configured ChatOpenAI instance pointing to LM Studio."""
-    return ChatOpenAI(
-        base_url=LM_STUDIO_URL,
-        api_key=LM_STUDIO_API_KEY,
-        model_name="gpt-4o",  # Standard model alias
-        temperature=0.7
-    )
+
 
 # --- Define Tools ---
 @tool
 def fetch_available_categories() -> str:
-    """Returns a formatted string of all available contractor categories and subcategories with their IDs from the database.
+    """Returns a formatted string of all available contractor categories with their IDs from the database.
     ALWAYS use this tool before assigning category IDs to user requests."""
     try:
-        categories = get_all_categories_with_subs()
+        categories = get_all_categories()
         categories_str = ""
         for cat in categories:
-            subs = ", ".join([f"{sub['name']}" for sub in cat.get("subcategories", [])])
-            categories_str += f"- ID: {cat['id']} | **{cat['name']}**: {subs}\n"
+            categories_str += f"- ID: {cat['id']} | **{cat['name']}**: {cat['description']}\n"
         return categories_str
     except Exception as e:
         logger.error(f"Error fetching categories: {e}")
         return "- ID: 1 | General Handyman\n"
 
-class SubTaskInput(BaseModel):
+class PromptInput(BaseModel):
     category_id: int = Field(description="The numeric ID of the trade/category from fetch_available_categories")
-    description: str = Field(description="Short description of the specific subtask / trade needed")
-    tender_text: str = Field(description="Detailed, professional job description / tender prompt shown to contractors for this trade")
+    prompt_text: str = Field(description="Detailed, professional job description / tender prompt shown to contractors for this trade")
 
 class SaveProjectInput(BaseModel):
     name: str = Field(description="Client's full name")
     phone: str = Field(description="Client's contact phone number")
     address: str = Field(description="Client's project job address")
     general_description: str = Field(description="High-level overview summary of the entire project scope")
-    subtasks: List[SubTaskInput] = Field(description="List of one or more subtasks/tenders categorized by trade")
+    prompts: List[PromptInput] = Field(description="List of one or more tenders (prompts) categorized by trade")
 
 class Engine:
     """Algorithm Engine v2 - Autonomous Deep Agent implementation"""
@@ -75,7 +67,7 @@ Your goal is to assist clients with their home improvement, renovation, maintena
 
 Available Tools:
 1. `fetch_available_categories`: Query the database to retrieve all valid contractor categories, trade IDs, and subcategories. ALWAYS call this tool to find matching category IDs.
-2. `save_project_and_tenders`: Save the confirmed client info, project, and one or more subtask tenders into the database.
+2. `save_project_and_tenders`: Save the confirmed client info, project, and one or more tenders (prompts) into the database.
 
 Client Pre-Loaded Details:
 [{info_summary}]
@@ -93,7 +85,7 @@ Instructions & Operational Rules:
    - If Name, Phone, or Address are missing, politely ask the client to provide them.
 4. Project & Tender Creation:
    - Once categories and client intake details (Name, Phone, Address) are confirmed, call `save_project_and_tenders`.
-   - In `save_project_and_tenders`, pass the client's name, phone, confirmed address, high-level general description, and the list of subtasks (each with category_id, description, and a clear, professional job tender description for contractors).
+   - In `save_project_and_tenders`, pass the client's name, phone, confirmed address, high-level general description, and the list of prompts (each with category_id and a clear, professional job tender prompt for contractors).
 5. Finishing:
    - After saving, give a friendly confirmation message to the user that their project has been logged and tenders have been sent to contractors.
 """
@@ -107,7 +99,7 @@ Instructions & Operational Rules:
         runtime_data = {
             "project_id": state.project_id,
             "identified_categories": list(state.identified_categories or []),
-            "sub_tasks": list(state.sub_tasks or []),
+            "prompts": list(state.prompts or []),
             "is_finished": getattr(state, "is_finished", False),
             "decision": None
         }
@@ -117,7 +109,7 @@ Instructions & Operational Rules:
             phone: str,
             address: str,
             general_description: str,
-            subtasks: List[Dict[str, Any]]
+            prompts: List[Dict[str, Any]]
         ) -> str:
             try:
                 # 1. Create project
@@ -129,44 +121,42 @@ Instructions & Operational Rules:
                 )
                 runtime_data["project_id"] = project_id
 
-                # 2. Create subtasks & tenders
-                formatted_subtasks = []
+                # 2. Create prompts & tenders
+                formatted_prompts = []
                 categories_found = []
 
-                if isinstance(subtasks, list):
-                    for idx, st in enumerate(subtasks, start=1):
-                        st_dict = st if isinstance(st, dict) else (st.model_dump() if hasattr(st, "model_dump") else dict(st))
-                        cat_id = st_dict.get("category_id", 1)
-                        desc = st_dict.get("description", "")
-                        tender_text = st_dict.get("tender_text", desc)
+                if isinstance(prompts, list):
+                    for idx, p in enumerate(prompts, start=1):
+                        p_dict = p if isinstance(p, dict) else (p.model_dump() if hasattr(p, "model_dump") else dict(p))
+                        cat_id = p_dict.get("category_id", 1)
+                        prompt_text = p_dict.get("prompt_text", "")
 
-                        create_sub_task(
+                        create_project_prompt(
                             project_id=project_id,
                             category_id=cat_id,
-                            comments=tender_text
+                            prompt_text=prompt_text
                         )
 
-                        formatted_subtasks.append({
-                            "sub_task_id": idx,
-                            "description": desc,
+                        formatted_prompts.append({
+                            "id": idx,
                             "category_id": cat_id,
-                            "comments": tender_text
+                            "prompt_text": prompt_text
                         })
                         categories_found.append({
                             "category_id": cat_id,
-                            "name": desc
+                            "name": prompt_text[:30] + "..."
                         })
 
-                runtime_data["sub_tasks"] = formatted_subtasks
+                runtime_data["prompts"] = formatted_prompts
                 runtime_data["identified_categories"] = categories_found
                 runtime_data["is_finished"] = True
 
-                if len(formatted_subtasks) == 1:
+                if len(formatted_prompts) == 1:
                     runtime_data["decision"] = "single"
-                elif len(formatted_subtasks) > 1:
+                elif len(formatted_prompts) > 1:
                     runtime_data["decision"] = "multiple"
 
-                return f"Success: Project created with ID {project_id} and {len(formatted_subtasks)} tenders generated."
+                return f"Success: Project created with ID {project_id} and {len(formatted_prompts)} tenders generated."
             except Exception as e:
                 logger.error(f"Error in save_project_and_tenders: {e}")
                 return f"Error saving project: {e}"
@@ -174,7 +164,7 @@ Instructions & Operational Rules:
         save_project_tool = StructuredTool.from_function(
             func=_save_project_and_tenders_func,
             name="save_project_and_tenders",
-            description="Saves the verified client details, project information, and categorized subtasks/tenders into the database.",
+            description="Saves the verified client details, project information, and categorized tenders (prompts) into the database.",
             args_schema=SaveProjectInput
         )
 
@@ -252,8 +242,8 @@ Instructions & Operational Rules:
         # Update state from runtime updates if available
         if runtime_data["project_id"] is not None:
             state.project_id = runtime_data["project_id"]
-        if runtime_data["sub_tasks"]:
-            state.sub_tasks = runtime_data["sub_tasks"]
+        if runtime_data["prompts"]:
+            state.prompts = runtime_data["prompts"]
         if runtime_data["identified_categories"]:
             state.identified_categories = runtime_data["identified_categories"]
         if runtime_data["is_finished"]:

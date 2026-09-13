@@ -1,6 +1,6 @@
 """Repository for conversation state data."""
 import json
-from backend.v1.db.connection import get_db_connection
+from backend.db.connection import get_db_connection
 
 
 def save_conversation(session_id: str, client_id: int, state_json: str, is_finished: bool):

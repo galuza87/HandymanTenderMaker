@@ -1,13 +1,13 @@
-from backend.v1.llm import get_llm
+from backend.llm import get_llm
 from backend.v1.agents.base import GraphState
-from backend.v1.db.database import get_all_categories_with_subs, create_sub_task
+from backend.db import get_all_categories, create_project_prompt
 from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent as create_agent
 
 def tender_creator_node(state: GraphState) -> dict:
     llm = get_llm()
     project_id = state.get("project_id")
-    sub_tasks = state.get("sub_tasks", [])
+    prompts = state.get("prompts", [])
     
     if not project_id:
         return {"messages": state["messages"] + [{"role": "assistant", "content": "TenderCreator error: Missing project_id."}], "next_agent": "Categorizer"}
@@ -19,7 +19,7 @@ def tender_creator_node(state: GraphState) -> dict:
     
     new_messages = list(state["messages"])
     
-    if len(sub_tasks) == 0:
+    if len(prompts) == 0:
         agent = create_agent(model=llm, tools=[], prompt=system_prompt)
         result = agent.invoke({"messages": state["messages"]})
         last_message = result["messages"][-1]
@@ -27,7 +27,7 @@ def tender_creator_node(state: GraphState) -> dict:
         
         cat_id = None
         try:
-            categories = get_all_categories_with_subs()
+            categories = get_all_categories()
             if categories:
                 cat_id = categories[0]['id']
         except Exception:
@@ -36,12 +36,12 @@ def tender_creator_node(state: GraphState) -> dict:
         if state.get("identified_categories") and len(state.get("identified_categories")) > 0:
             cat_id = state.get("identified_categories")[0].get("category_id", cat_id)
             
-        create_sub_task(project_id=project_id, category_id=cat_id, comments=tender_text)
+        create_project_prompt(project_id=project_id, category_id=cat_id, prompt_text=tender_text)
         new_messages.append(AIMessage(content="Your tender has been created and sent to contractors."))
     else:
         new_messages.append(AIMessage(content="Creating multiple tenders for your project..."))
-        for task in sub_tasks:
-            prompt = system_prompt + f"\nSpecifically, write the tender for this sub-task: {task.get('description')}"
+        for task in prompts:
+            prompt = system_prompt + f"\nSpecifically, write the tender for this prompt: {task.get('prompt_text')}"
             agent = create_agent(model=llm, tools=[], prompt=prompt)
             result = agent.invoke({"messages": state["messages"]})
             last_message = result["messages"][-1]
@@ -50,12 +50,12 @@ def tender_creator_node(state: GraphState) -> dict:
             cat_id = task.get('category_id')
             if not cat_id:
                 try:
-                    categories = get_all_categories_with_subs()
+                    categories = get_all_categories()
                     if categories:
                         cat_id = categories[0]['id']
                 except Exception:
                     cat_id = 1
-            create_sub_task(project_id=project_id, category_id=cat_id, comments=tender_text)
+            create_project_prompt(project_id=project_id, category_id=cat_id, prompt_text=tender_text)
             
         new_messages.append(AIMessage(content="All tenders have been created and sent to the respective contractors."))
         
