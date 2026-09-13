@@ -87,7 +87,7 @@ def create_app() -> FastAPI:
             name=req.name,
             last_name=req.last_name,
             phone=req.phone,
-            additional_phone=req.additional_phone,
+            additional_phone=req.additional_phone, # type: ignore
             email=req.email,
             address=req.address,
         )
@@ -125,7 +125,7 @@ def create_app() -> FastAPI:
             client_id=client_id,
             name=req.name,
             last_name=req.last_name,
-            additional_phone=req.additional_phone,
+            additional_phone=req.additional_phone, # type: ignore
             email=req.email,
             address=req.address,
         )
