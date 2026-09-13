@@ -17,8 +17,10 @@ For new code, prefer importing directly from the specific repository modules:
 from backend.db.connection import get_db_connection, DB_CONN_STR
 from backend.db.categories_repository import (
     get_all_categories,
-    get_all_contractors,
     search_categories,
+)
+from backend.db.contractors_repository import (
+    get_all_contractors
 )
 from backend.db.clients_repository import (
     get_client_by_phone,
