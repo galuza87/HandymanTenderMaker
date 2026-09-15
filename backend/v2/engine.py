@@ -268,3 +268,34 @@ Instructions & Operational Rules:
 
         logging.info(f"--- [v2 Deep Agent Process End] is_finished: {state.is_finished}, project_id: {state.project_id} ---")
         return state
+
+# --- Studio-only entry point (does not affect production `process()` flow) ---
+def get_deep_agent():
+    """Factory for LangGraph Studio inspection. Mirrors Engine.process()'s agent
+    construction, but with a stub save tool (Studio has no live request state
+    to write real projects against)."""
+
+    def _stub_save_project_and_tenders(
+        name: str,
+        phone: str,
+        address: str,
+        general_description: str,
+        prompts: List[Dict[str, Any]]
+    ) -> str:
+        return f"[Studio stub] Would save project for {name} with {len(prompts)} tender(s)."
+
+    stub_save_tool = StructuredTool.from_function(
+        func=_stub_save_project_and_tenders,
+        name="save_project_and_tenders",
+        description="Saves the verified client details, project information, and categorized tenders (prompts) into the database.",
+        args_schema=SaveProjectInput
+    )
+
+    engine = Engine()
+    system_prompt = engine._build_system_prompt(client_info={})
+
+    return create_deep_agent(
+        model=engine.llm,
+        tools=[fetch_available_categories, stub_save_tool],
+        system_prompt=system_prompt
+    )
