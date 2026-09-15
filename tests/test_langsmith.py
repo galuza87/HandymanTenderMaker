@@ -31,8 +31,7 @@ def run_nodes(inputs: dict) -> dict:
         state = engine.determine_task_category(state)
         
     return {
-        "identified_categories": state.identified_categories,
-        "sub_tasks": state.sub_tasks
+        "identified_categories": state.identified_categories
     }
 
 # --- Evaluators ---

@@ -32,7 +32,6 @@ class Engine:
         input_state = {
             "messages": lc_messages,
             "identified_categories": state.identified_categories,
-            "sub_tasks": state.sub_tasks,
             "client_info": state.client_info,
             "next_agent": state.next_step,
             "ip_address": state.ip_address,
@@ -71,8 +70,6 @@ class Engine:
         state.messages = new_messages
         state.next_step = final_state.get("next_agent", "DataValidator")
         
-        if "sub_tasks" in final_state:
-            state.sub_tasks = final_state["sub_tasks"]
         if "CategorizerDecision" in final_state and final_state["CategorizerDecision"]:
             state.CategorizerDecision = final_state["CategorizerDecision"]
         else:
