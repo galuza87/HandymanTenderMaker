@@ -24,26 +24,12 @@ def multi_task_architect_node(state: GraphState) -> dict:
         last_message = result["messages"][-1]
         content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
-        sub_tasks = list(state.get("sub_tasks", []))
-        
         if isinstance(content_str, str) and "ALL_DONE" in content_str:
             clean_content = content_str.replace("ALL_DONE", "").strip()
             import re
             match = re.search(r'\[.*\]', clean_content, re.DOTALL)
             if match:
-                try:
-                    parsed = json.loads(match.group(0))
-                    if isinstance(parsed, list):
-                        for task_desc in parsed:
-                            if isinstance(task_desc, dict) and 'description' in task_desc and 'category_id' in task_desc:
-                                sub_tasks.append({
-                                    "sub_task_id": len(sub_tasks) + 1, 
-                                    "description": task_desc['description'],
-                                    "category_id": task_desc['category_id']
-                                })
-                    clean_content = re.sub(r'\[.*\]', '', clean_content, flags=re.DOTALL).strip()
-                except Exception as e:
-                    print(f"Failed to parse sub-tasks: {e}")
+                clean_content = re.sub(r'\[.*\]', '', clean_content, flags=re.DOTALL).strip()
                     
             if hasattr(last_message, 'content'):
                 result["messages"][-1] = AIMessage(content=clean_content)
@@ -56,7 +42,6 @@ def multi_task_architect_node(state: GraphState) -> dict:
             
         return {
             "messages": result["messages"], 
-            "sub_tasks": sub_tasks,
             "next_agent": next_agent
         }
     except Exception as e:

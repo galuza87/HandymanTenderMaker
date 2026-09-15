@@ -66,9 +66,7 @@ def main():
         print("Starting backend...")
         backend_process = subprocess.Popen(
             [python_exe, "-m", "backend.main"],
-            cwd=base_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            cwd=base_dir
         )
         print("-> Backend started (backend.main)")
         time.sleep(2)  # Give backend time to start

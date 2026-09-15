@@ -14,7 +14,6 @@ class CategorizerDecisionLLMOutput(BaseModel):
 class GraphState(TypedDict, total=False):
     messages: list
     identified_categories: list
-    sub_tasks: list
     client_info: dict
     next_agent: str
     ip_address: str

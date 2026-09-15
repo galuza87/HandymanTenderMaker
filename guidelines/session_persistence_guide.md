@@ -14,7 +14,7 @@ Here are the critical objects to persist:
 * **`session_id`**: (UUID/String) The unique identifier for this specific conversation.
 * **`messages`**: (List of Dicts) The full conversation history. This gives the LLM its memory. *Note: For images, you should save URLs rather than raw Base64 strings to save database space.*
 * **`next_step`**: (String) Extremely critical! This tells the `engine.py` exactly which node (e.g., `collect_client_info`) the user was parked at when they left.
-* **`identified_categories` & `sub_tasks`**: (Lists) The workflow progress up to the point of abandonment.
+* **`identified_categories`**: (List) The workflow progress up to the point of abandonment.
 * **`client_info`**: (Dict) Any partial data collected (e.g., they gave their name but closed the browser before giving their phone number).
 
 ---
