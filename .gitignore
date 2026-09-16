@@ -45,3 +45,6 @@ Thumbs.db
 
 # LangGraph API
 .langgraph_api
+
+# Antigravity MCP Config (contains secrets)
+.agents/mcp_config.json

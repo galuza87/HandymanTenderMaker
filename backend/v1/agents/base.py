@@ -15,6 +15,7 @@ class GraphState(TypedDict, total=False):
     messages: list
     identified_categories: list
     client_info: dict
+    confirmed_job_description: str
     next_agent: str
     ip_address: str
     session_id: str
@@ -22,3 +23,5 @@ class GraphState(TypedDict, total=False):
     CategorizerDecision: CategorizerDecisionClass
     project_id: Optional[int]
     is_finished: bool
+    open_topics: list
+    has_fetched_past_feedback: bool

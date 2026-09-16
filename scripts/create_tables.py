@@ -78,6 +78,25 @@ def build_schema():
             END
         """)
 
+        # 2.5 Create contractor_category table
+        print("Creating 'contractor_category' table...")
+        cursor.execute("""
+            IF OBJECT_ID('dbo.contractor_category', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.contractor_category (
+                    contractor_id INT NOT NULL FOREIGN KEY REFERENCES dbo.contractor(id),
+                    category_id INT NOT NULL FOREIGN KEY REFERENCES dbo.major_category(id),
+                    PRIMARY KEY (contractor_id, category_id)
+                );
+                PRINT 'contractor_category table created.';
+            END
+            ELSE
+            BEGIN
+                PRINT 'contractor_category table already exists.';
+            END
+        """)
+
+
         # 3. Create Clients table
         print("Creating 'Clients' table...")
         cursor.execute("""
@@ -130,15 +149,24 @@ def build_schema():
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     project_id INT FOREIGN KEY REFERENCES dbo.PROJECTS(id),
                     category_id INT FOREIGN KEY REFERENCES dbo.major_category(id),
-                    contractor_id INT FOREIGN KEY REFERENCES dbo.contractor(id) NULL,
                     prompt_text NVARCHAR(MAX) NOT NULL,
+                    comments NVARCHAR(MAX) NULL,
+                    embedding VECTOR(384) NULL,
                     created_at DATETIME DEFAULT GETDATE()
                 );
                 PRINT 'ProjectPrompts table created.';
             END
             ELSE
             BEGIN
-                PRINT 'ProjectPrompts table already exists.';
+                PRINT 'ProjectPrompts table already exists. Altering to add new columns if they do not exist...';
+                IF COL_LENGTH('dbo.ProjectPrompts', 'comments') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.ProjectPrompts ADD comments NVARCHAR(MAX) NULL;
+                END
+                IF COL_LENGTH('dbo.ProjectPrompts', 'embedding') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.ProjectPrompts ADD embedding VECTOR(384) NULL;
+                END
             END
         """)
 
