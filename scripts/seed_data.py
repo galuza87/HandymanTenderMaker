@@ -70,6 +70,40 @@ def seed_data():
                 END
             """, (email, first, last, email, photo, desc))
             
+        # 3. Seed contractor_category mapping
+        print("Seeding 'contractor_category'...")
+        mappings = [
+            ("john.doe@handypro.com", ["plumbing"]),
+            ("sarah.sparks@electrix.net", ["electrical work"]),
+            ("mike.mason@constructbuilders.com", ["construction", "carpentry", "moving"]),
+            ("david.wood@carpentryconcepts.com", ["carpentry", "construction"]),
+            ("helen.heights@roofguards.com", ["roofing"]),
+            ("alex.fixit@appliancedoctor.com", ["appliance fixing", "appliance installing"])
+        ]
+        
+        for email, categories in mappings:
+            # get contractor id
+            cursor.execute("SELECT id FROM dbo.contractor WHERE email = ?", (email,))
+            contractor_row = cursor.fetchone()
+            if not contractor_row:
+                continue
+            contractor_id = contractor_row[0]
+            
+            for cat_name in categories:
+                # get category id
+                cursor.execute("SELECT id FROM dbo.major_category WHERE name = ?", (cat_name,))
+                cat_row = cursor.fetchone()
+                if not cat_row:
+                    continue
+                category_id = cat_row[0]
+                
+                cursor.execute("""
+                    IF NOT EXISTS (SELECT 1 FROM dbo.contractor_category WHERE contractor_id = ? AND category_id = ?)
+                    BEGIN
+                        INSERT INTO dbo.contractor_category (contractor_id, category_id) VALUES (?, ?);
+                    END
+                """, (contractor_id, category_id, contractor_id, category_id))
+        
         print("Database seeded successfully!")
         cursor.close()
         conn.close()

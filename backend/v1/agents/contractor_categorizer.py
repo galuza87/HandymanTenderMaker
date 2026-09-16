@@ -11,8 +11,8 @@ def contractor_categorizer_node(state: GraphState) -> dict:
         "You are the Contractor Categorizer. The project only needs ONE professional.\n"
         "Use the fetch_available_categories tool to see the available trades.\n"
         "Identify the EXACT category ID that matches the user's request.\n"
-        "If you are unsure, ask the user a clarifying question (do NOT append ALL_DONE).\n"
-        "If you have identified the category ID, output it in the format: ALL_DONE_CATEGORY_<ID> (e.g. ALL_DONE_CATEGORY_12)"
+        "CRITICAL INSTRUCTION: You MUST NOT ask the user to confirm the category. You MUST NOT ask the user for any clarification.\n"
+        "Just pick the best matching category and output it immediately in the format: ALL_DONE_CATEGORY_<ID> (e.g. ALL_DONE_CATEGORY_12)"
     )
     
     agent = create_agent(model=llm, tools=[fetch_available_categories], prompt=system_prompt)

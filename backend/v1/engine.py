@@ -39,6 +39,7 @@ class Engine:
             "user_id": state.user_id,
             "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else None,
             "project_id": state.project_id,
+            "confirmed_job_description": state.confirmed_job_description,
             "is_finished": getattr(state, "is_finished", False)
         }
         
@@ -82,5 +83,8 @@ class Engine:
             
         if "is_finished" in final_state:
             state.is_finished = final_state["is_finished"]
+            
+        if "confirmed_job_description" in final_state:
+            state.confirmed_job_description = final_state["confirmed_job_description"]
         
         return state
