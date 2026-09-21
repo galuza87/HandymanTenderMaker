@@ -7,6 +7,32 @@ from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import create_react_agent as create_agent
 
 def intake_node(state: GraphState) -> dict:
+    """Collects and confirms client contact details, then saves the project.
+
+    Uses any client details already present in `state["client_info"]` to
+    avoid re-asking for information the system already has, confirms a
+    pre-loaded address rather than silently trusting it, and once name,
+    phone, and address are settled, saves the client and project via the
+    `save_client_and_project` tool.
+
+    Args:
+        state: The current graph state. Reads `state["messages"]`,
+            `state["client_info"]`, `state["user_id"]`, and
+            `state["project_id"]`.
+
+    Returns:
+        A dict with updated `messages` and `project_id`. `next_agent` is set
+        to "TenderCreator" once the project has been saved, or loops back to
+        "IntakeCoordinator" if information is still being collected or
+        confirmed.
+
+    Note:
+        No evaluator is wired for this node yet. If one is added
+        (eval/intake_judge.py), its SYSTEM_PROMPT must be kept in sync
+        with any future change to this node's collection/confirmation
+        logic.
+    """
+
     llm = get_llm()
     
     def _save_client_and_project(name: str, phone: str, address: str, general_description: str) -> str:

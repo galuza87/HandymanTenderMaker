@@ -4,8 +4,35 @@ from backend.v1.agents.base import GraphState
 from backend.v1.tools import fetch_available_categories
 from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent as create_agent
+from backend.v1.eval import contractor_categorizer_judge
 
 def contractor_categorizer_node(state: GraphState) -> dict:
+    """Identifies the single contractor category that matches the request.
+
+    Runs a tool-using agent (with `fetch_available_categories`) in a loop
+    until it either identifies an exact category ID or determines it needs
+    to ask the user a clarifying question. Completion is signaled by the
+    agent appending an "ALL_DONE_CATEGORY_<ID>" sentinel to its own output,
+    which is parsed out and stripped before the message is shown to the user.
+
+    Args:
+        state: The current graph state. Reads `state["messages"]` and
+            `state["identified_categories"]`.
+
+    Returns:
+        A dict with updated `messages`. If a category was identified, also
+        includes the updated `identified_categories` list and `next_agent`
+        set to "IntakeCoordinator". If still gathering information,
+        `next_agent` loops back to "ContractorCategorizer" so the graph
+        pauses for the user's reply.
+
+    Note:
+        Any change to this node's decision logic must be reflected in
+        `eval/contractor_categorizer_judge.py`, its SYSTEM_PROMPT must be
+        kept in sync with any future change to this node's category
+        matching logic.
+    """
+
     llm = get_llm()
     system_prompt = (
         "You are the Contractor Categorizer. The project only needs ONE professional.\n"
@@ -38,7 +65,10 @@ def contractor_categorizer_node(state: GraphState) -> dict:
             else:
                 result["messages"][-1]["content"] = clean_content
             next_agent = "IntakeCoordinator"
-            
+
+            # Fire the online judge with the node's real decision, not the error-fallback path.
+            contractor_categorizer_judge.maybe_evaluate_async(state.get("messages", []), identified_categories)
+
             return {
                 "messages": result["messages"],
                 "identified_categories": identified_categories,
@@ -46,7 +76,7 @@ def contractor_categorizer_node(state: GraphState) -> dict:
             }
         else:
             next_agent = "ContractorCategorizer"
-            
+
             return {
                 "messages": result["messages"],
                 "next_agent": next_agent

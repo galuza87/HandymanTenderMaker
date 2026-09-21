@@ -3,8 +3,36 @@ from backend.v1.agents.base import GraphState
 from backend.db import get_all_categories, create_project_prompt
 from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent as create_agent
+from backend.v1.eval import tender_creator_judge
 
 def tender_creator_node(state: GraphState) -> dict:
+    """Writes the tender text(s) shown to contractors and saves them.
+
+    Handles two cases: a single tender for a single-trade project, or one
+    tender per sub-task for a multi-trade project (driven by
+    `state["prompts"]`). Each tender is generated from the conversation
+    history and saved via `create_project_prompt`, tagged with the relevant
+    category ID.
+
+    Args:
+        state: The current graph state. Reads `state["messages"]`,
+            `state["project_id"]`, `state["prompts"]`, and
+            `state["identified_categories"]`.
+
+    Returns:
+        A dict with updated `messages` (a confirmation message appended),
+        `next_agent` set back to "Categorizer", and `is_finished` set to
+        True. If `project_id` is missing, returns early with an error
+        message and `next_agent` set to "Categorizer" without creating any
+        tenders.
+
+    Note:
+        Any change to this node's decision logic must be reflected in
+        `eval/tender_creator_judge.py`, its SYSTEM_PROMPT must be kept
+        in sync with any future change to this node's tender-generation
+        logic.
+    """
+
     llm = get_llm()
     project_id = state.get("project_id")
     prompts = state.get("prompts", [])
@@ -58,7 +86,10 @@ def tender_creator_node(state: GraphState) -> dict:
             create_project_prompt(project_id=project_id, category_id=cat_id, prompt_text=tender_text)
             
         new_messages.append(AIMessage(content="All tenders have been created and sent to the respective contractors."))
-        
+
+    # Fire the online judge with the node's decision
+    tender_creator_judge.maybe_evaluate_async(state.get("messages", []), tender_text)
+
     return {
         "messages": new_messages,
         "next_agent": "Categorizer",
