@@ -44,6 +44,7 @@ class AgentState(BaseModel):
     prompts: List[Dict[str, Any]] = [] # e.g., [{"id": 1, "category": "plumbing", "prompt_text": "fix pipe"}]
     collected_details: Dict[str, str] = {}
     client_info: Dict[str, str] = {}
+    confirmed_job_description: Optional[str] = None
     next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks
     ip_address: Optional[str] = None
     CategorizerDecision: Optional[CategorizerDecisionClass] = None

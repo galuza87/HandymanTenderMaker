@@ -136,11 +136,9 @@ class TestChatEndpoint:
         assert "reply" in data
         assert "collected_details" in data
         assert "identified_categories" in data
-        assert "sub_tasks" in data
         assert isinstance(data["reply"], str)
         assert isinstance(data["collected_details"], dict)
         assert isinstance(data["identified_categories"], list)
-        assert isinstance(data["sub_tasks"], list)
 
 
 class TestCategoriesEndpoint:
@@ -429,7 +427,7 @@ class TestResponseValidation:
         data = response.json()
         
         # All these fields should exist
-        required_fields = ["reply", "collected_details", "identified_categories", "sub_tasks"]
+        required_fields = ["reply", "collected_details", "identified_categories"]
         for field in required_fields:
             assert field in data, f"Missing required field: {field}"
     

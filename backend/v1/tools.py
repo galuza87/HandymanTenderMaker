@@ -1,7 +1,9 @@
+import functools
 from langchain_core.tools import tool
 from backend.db import get_all_categories
 
 @tool
+@functools.lru_cache(maxsize=1)
 def fetch_available_categories() -> str:
     """Returns a formatted string of all available contractor categories from the database. Use this to see what trades are available."""
     try:

@@ -5,6 +5,13 @@ from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent as create_agent
 from backend.v1.eval import tender_creator_judge
 
+# Try to import sentence-transformers, fail gracefully if not ready yet
+try:
+    from sentence_transformers import SentenceTransformer
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+except ImportError:
+    embedder = None
+
 def tender_creator_node(state: GraphState) -> dict:
     """Writes the tender text(s) shown to contractors and saves them.
 
@@ -53,6 +60,14 @@ def tender_creator_node(state: GraphState) -> dict:
         last_message = result["messages"][-1]
         tender_text = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
         
+        # Generate embedding for the tender_text
+        embedding = None
+        if embedder:
+            try:
+                embedding = embedder.encode(tender_text).tolist()
+            except Exception as e:
+                print(f"Error generating embedding: {e}")
+                
         cat_id = None
         try:
             categories = get_all_categories()
@@ -64,8 +79,16 @@ def tender_creator_node(state: GraphState) -> dict:
         if state.get("identified_categories") and len(state.get("identified_categories")) > 0:
             cat_id = state.get("identified_categories")[0].get("category_id", cat_id)
             
-        create_project_prompt(project_id=project_id, category_id=cat_id, prompt_text=tender_text)
+        create_project_prompt(
+            project_id=project_id, 
+            category_id=cat_id, 
+            prompt_text=tender_text,
+            embedding=embedding
+        )
         new_messages.append(AIMessage(content="Your tender has been created and sent to contractors."))
+        
+        # Fire the online judge with the node's decision
+        tender_creator_judge.maybe_evaluate_async(state.get("messages", []), tender_text)
     else:
         new_messages.append(AIMessage(content="Creating multiple tenders for your project..."))
         for task in prompts:
@@ -75,6 +98,14 @@ def tender_creator_node(state: GraphState) -> dict:
             last_message = result["messages"][-1]
             tender_text = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
             
+            # Generate embedding for the tender_text
+            embedding = None
+            if embedder:
+                try:
+                    embedding = embedder.encode(tender_text).tolist()
+                except Exception as e:
+                    print(f"Error generating embedding: {e}")
+            
             cat_id = task.get('category_id')
             if not cat_id:
                 try:
@@ -83,12 +114,17 @@ def tender_creator_node(state: GraphState) -> dict:
                         cat_id = categories[0]['id']
                 except Exception:
                     cat_id = 1
-            create_project_prompt(project_id=project_id, category_id=cat_id, prompt_text=tender_text)
+            create_project_prompt(
+                project_id=project_id, 
+                category_id=cat_id, 
+                prompt_text=tender_text,
+                embedding=embedding
+            )
+            
+            # Fire the online judge with the node's decision for each subtask
+            tender_creator_judge.maybe_evaluate_async(state.get("messages", []), tender_text)
             
         new_messages.append(AIMessage(content="All tenders have been created and sent to the respective contractors."))
-
-    # Fire the online judge with the node's decision
-    tender_creator_judge.maybe_evaluate_async(state.get("messages", []), tender_text)
 
     return {
         "messages": new_messages,

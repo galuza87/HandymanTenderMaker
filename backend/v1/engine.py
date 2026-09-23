@@ -32,7 +32,6 @@ class Engine:
         input_state = {
             "messages": lc_messages,
             "identified_categories": state.identified_categories,
-            "sub_tasks": state.sub_tasks,
             "client_info": state.client_info,
             "next_agent": state.next_step,
             "ip_address": state.ip_address,
@@ -40,6 +39,7 @@ class Engine:
             "user_id": state.user_id,
             "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else None,
             "project_id": state.project_id,
+            "confirmed_job_description": state.confirmed_job_description,
             "is_finished": getattr(state, "is_finished", False)
         }
         
@@ -71,8 +71,6 @@ class Engine:
         state.messages = new_messages
         state.next_step = final_state.get("next_agent", "DataValidator")
         
-        if "sub_tasks" in final_state:
-            state.sub_tasks = final_state["sub_tasks"]
         if "CategorizerDecision" in final_state and final_state["CategorizerDecision"]:
             state.CategorizerDecision = final_state["CategorizerDecision"]
         else:
@@ -85,5 +83,8 @@ class Engine:
             
         if "is_finished" in final_state:
             state.is_finished = final_state["is_finished"]
+            
+        if "confirmed_job_description" in final_state:
+            state.confirmed_job_description = final_state["confirmed_job_description"]
         
         return state

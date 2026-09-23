@@ -2,7 +2,11 @@
   "python_version": "3.12",
   "dependencies": ["."],
   "graphs": {
-    "agent": "./backend/v1/engine.py:app"
+    "agent": "./backend/v1/graph.py:app",
+    "deepagent": "./backend/v2/engine.py:get_deep_agent"
+  },
+  "_disabled_graphs": {
+    
   },
   "env": ".env"
 }
