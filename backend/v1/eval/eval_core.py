@@ -145,7 +145,7 @@ def judge_and_route(
         # The OpenAI SDK's current type stubs expose ``chat`` as a method,
         # although at runtime it is the completions resource used here.
         completion = cast(Any, judge).chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=os.environ.get("EVAL_MODEL", "llama3-70b-8192"),
             # Zero temperature: the verdict feeds a regression-test
             # dataset, so it needs to be repeatable, not creatively varied.
             temperature=0.0,
