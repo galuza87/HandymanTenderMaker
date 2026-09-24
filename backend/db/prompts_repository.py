@@ -36,7 +36,7 @@ def create_project_prompt(project_id: int, category_id: int, prompt_text: str = 
         print(f"Error creating prompt: {e}")
         return None
 
-def get_similar_prompts_comments(category_id: int, embedding: List[float], limit: int = 3) -> List[str]:
+def get_similar_prompts_comments(category_id: int, embedding: List[float], limit: int = 5) -> List[str]:
     """
     Search for similar past tenders in the same category using VECTOR_DISTANCE and return their comments.
     """

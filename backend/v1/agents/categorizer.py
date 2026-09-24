@@ -3,8 +3,29 @@ from openai import OpenAI
 from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
 from backend.v1.agents.base import GraphState, CategorizerDecisionLLMOutput
 from backend.models import CategorizerDecisionClass
+from backend.v1.eval import categorizer_judge
 
 def categorizer_node(state: GraphState) -> dict:
+    """Classifies whether the request needs a single trade or multiple trades.
+
+    Args:
+        state: The current graph state. Reads `state["messages"]` for the
+            conversation so far.
+
+    Returns:
+        A dict with `CategorizerDecision` (the parsed single/multiple
+        decision) and `next_agent` set to "ContractorCategorizer" for a
+        single-trade job or "MultiTaskArchitect" for a multi-trade job. On
+        an internal error, defaults to a "multiple" decision and routes to
+        "InformationGatherer" rather than guessing a trade.
+        
+    Note:
+        Any change to this node's decision logic must be reflected in
+        `eval/categorizer_judge.py`'s SYSTEM_PROMPT -- the judge's
+        definition of a correct decision is otherwise not the same as
+        the node's, and its scores will silently drift out of sync.
+    """
+
     client = OpenAI(base_url=LM_STUDIO_URL, api_key=LM_STUDIO_API_KEY)
     
     system_prompt = (
@@ -53,7 +74,10 @@ def categorizer_node(state: GraphState) -> dict:
             next_agent = "ContractorCategorizer"
         else:
             next_agent = "MultiTaskArchitect"
-            
+
+        # Fire the online judge with the node's real decision, not the error-fallback path.
+        categorizer_judge.maybe_evaluate_async(state.get("messages", []), result.decision)
+
         return {
             "CategorizerDecision": result,
             "next_agent": next_agent

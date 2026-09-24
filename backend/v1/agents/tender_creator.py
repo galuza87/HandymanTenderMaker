@@ -1,8 +1,14 @@
 from backend.v1.agents.base import GraphState
 from backend.db import get_all_categories, create_project_prompt
 from langchain_core.messages import AIMessage
+from backend.v1.eval import tender_creator_judge
 
 # Try to import sentence-transformers, fail gracefully if not ready yet
+# Note:
+#         Any change to this node's decision logic must be reflected in
+#         `eval/tender_creator_judge.py`, its SYSTEM_PROMPT must be kept
+#         in sync with any future change to this node's tender-generation
+#         logic.
 try:
     from sentence_transformers import SentenceTransformer
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
@@ -10,6 +16,7 @@ except ImportError:
     embedder = None
 
 def tender_creator_node(state: GraphState) -> dict:
+ 
     project_id = state.get("project_id")
     confirmed_job_description = state.get("confirmed_job_description")
     
@@ -54,6 +61,8 @@ def tender_creator_node(state: GraphState) -> dict:
         )
         
     new_messages.append(AIMessage(content=f"Tenders have been finalized and saved for {len(identified_categories)} categories!"))
+
+    tender_creator_judge.maybe_evaluate_async(state.get("messages", []), confirmed_job_description)
     
     return {
         "messages": new_messages,
