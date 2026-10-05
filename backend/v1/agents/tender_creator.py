@@ -62,7 +62,7 @@ def tender_creator_node(state: GraphState) -> dict:
         
     new_messages.append(AIMessage(content=f"Tenders have been finalized and saved for {len(identified_categories)} categories!"))
 
-    tender_creator_judge.maybe_evaluate_async(state.get("messages", []), confirmed_job_description)
+    tender_creator_judge.maybe_evaluate_async(state.get("messages", []), confirmed_job_description, state.get("session_id"))
     
     return {
         "messages": new_messages,

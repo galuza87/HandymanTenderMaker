@@ -1,12 +1,3 @@
-"""Node-specific judge config and the inline (live-traffic) trigger for
-InformationGatherer.
-
-Unlike the other nodes, this one has no discrete decision value (no
-single/multiple, no category_id) -- its entire output is a single
-free-text clarifying question. The judge evaluates that question's
-quality directly, rather than a status string.
-"""
-
 import os
 import random
 import threading
@@ -37,19 +28,7 @@ Respond with strict JSON only: {"correct": true or false, "reasoning": "<one sen
 
 
 def _extract_last_ai_text(messages: list) -> str | None:
-    """Pull the node's own generated text out of a message list.
-
-    Returns None if the last message is this node's error-fallback text
-    ("InformationGatherer error: ..."), since that's not a real
-    clarifying question to judge.
-
-    Args:
-        messages: The conversation, in either dict or LangChain-object
-            message shape.
-
-    Returns:
-        The last message's content, or None if it's the error-fallback text.
-    """
+    """Expects: message list. Modifies: nothing. Returns: last AI text or None."""
     if not messages:
         return None
     last = messages[-1]
@@ -60,29 +39,12 @@ def _extract_last_ai_text(messages: list) -> str | None:
 
 
 def extract_status_from_run(run) -> str | None:
-    """Pull the clarifying question a historical InformationGatherer run asked.
-
-    Args:
-        run: A LangSmith Run object for one InformationGatherer execution.
-
-    Returns:
-        The question text, or None if the run hit its error-fallback path.
-    """
+    """Expects: a LangSmith run. Modifies: nothing. Returns: question text or None."""
     return _extract_last_ai_text(run.outputs.get("messages", []))
 
 
-def maybe_evaluate_async(messages: list) -> None:
-    """Fire the online judge for the current live InformationGatherer run.
-
-    Call this from inside `information_gatherer_node`, after building
-    the returned `messages` list -- the question being judged is that
-    list's last entry, since this node's entire output *is* that
-    message, not something passed to this function separately.
-
-    Args:
-        messages: The updated conversation, as returned by the node
-            (i.e. including the question it just asked).
-    """
+def maybe_evaluate_async(messages: list, session_id: str | None = None) -> None:
+    """Expects: messages and optional node session ID. Modifies: starts a background judge when sampling allows it. Returns: None."""
     if random.random() > SAMPLE_RATE:
         return
 
@@ -94,12 +56,13 @@ def maybe_evaluate_async(messages: list) -> None:
     if run is None:
         return
 
+    effective_session_id = session_id or getattr(run, "session_id", None)
     conversation_text = format_conversation(messages)
 
     threading.Thread(
         target=judge_and_route,
         args=(
-            conversation_text, question, run.id, run.trace_id,
+            conversation_text, question, run.id, effective_session_id, run.trace_id,
             SYSTEM_PROMPT, FEEDBACK_KEY, GOOD_QUEUE_ID, CORRECTION_QUEUE_ID,
         ),
         daemon=True,

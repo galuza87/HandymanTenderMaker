@@ -1,14 +1,3 @@
-"""Node-specific judge config and the inline (live-traffic) trigger for
-MultiTaskArchitect.
-
-The judge is given the same category_id -> name/description mapping as
-contractor_categorizer_judge.py (fetched once via
-`fetch_available_categories`, cached for the process lifetime), so it
-can check each sub-task's category_id against a real name, not just
-assess whether the sub-task descriptions sound reasonable in isolation.
-"""
-
-import json
 import os
 import random
 import threading
@@ -45,17 +34,7 @@ _categories_context: str | None = None
 
 
 def _get_categories_context() -> str:
-    """Fetch (and cache) the category list as context text for the judge prompt.
-
-    Degrades gracefully on failure -- if the DB call fails, the judge
-    falls back to reasoning from the conversation and sub-task
-    descriptions alone, rather than blocking evaluation entirely over a
-    categories-lookup failure.
-
-    Returns:
-        A formatted "Available categories:\n..." string, or an empty
-        string if the lookup failed.
-    """
+    """Expects: nothing. Modifies: caches category text once. Returns: category context string."""
     global _categories_context
     if _categories_context is None:
         try:
@@ -67,20 +46,7 @@ def _get_categories_context() -> str:
 
 
 def _error_prefix_present(messages: list) -> bool:
-    """Check for this node's own error-fallback text in the transcript.
-
-    Mirrors the same check in contractor_categorizer_judge.py --
-    multi_task_architect_node's except block appends a message starting
-    with "MultiTaskArchitect error:" instead of setting a real
-    next_agent, so those runs aren't a real decomposition decision.
-
-    Args:
-        messages: The conversation, in either dict or LangChain-object
-            message shape.
-
-    Returns:
-        True if the last message is this node's error-fallback text.
-    """
+    """Expects: message list. Modifies: nothing. Returns: whether the last message is the node error prefix."""
     if not messages:
         return False
     last = messages[-1]
@@ -89,55 +55,32 @@ def _error_prefix_present(messages: list) -> bool:
 
 
 def extract_status_from_run(run) -> str | None:
-    """Reconstruct a historical run's sub-task list, if the decomposition completed.
-
-    Args:
-        run: A LangSmith Run object for one MultiTaskArchitect execution.
-
-    Returns:
-        A JSON string of the sub_tasks list, or None if the node is
-        still gathering information, hit its error path, or produced no
-        sub-tasks.
-    """
+    """Expects: a LangSmith run. Modifies: nothing. Returns: decision text or None."""
     messages = run.outputs.get("messages", [])
     if _error_prefix_present(messages):
         return None
     if run.outputs.get("next_agent") != "IntakeCoordinator":
         return None
-    sub_tasks = run.outputs.get("sub_tasks") or []
-    if not sub_tasks:
-        return None
-    return json.dumps(sub_tasks)
+    decision_text = run.outputs.get("multi_task_decision")
+    return decision_text if isinstance(decision_text, str) and decision_text.strip() else None
 
 
-def maybe_evaluate_async(messages: list, sub_tasks: list | None) -> None:
-    """Fire the online judge for the current live MultiTaskArchitect run.
-
-    Call this from inside `multi_task_architect_node`, right after the
-    sub-task JSON has been parsed out of the ALL_DONE-marked response --
-    not from the "still gathering information" branch.
-
-    Args:
-        messages: The conversation so far, as stored on `state["messages"]`.
-        sub_tasks: The finalized sub_tasks list, or None/empty if the
-            node is still gathering information -- call sites should
-            pass None in that case, mirroring `extract_status_from_run`
-            above.
-    """
-    if not sub_tasks or random.random() > SAMPLE_RATE:
+def maybe_evaluate_async(messages: list, decision_text: str, session_id: str | None = None) -> None:
+    """Expects: messages, decision text, and optional node session ID. Modifies: starts a background judge when sampling allows it. Returns: None."""
+    if not decision_text.strip() or random.random() > SAMPLE_RATE:
         return
 
     run = get_current_run_tree()
     if run is None:
         return
 
+    effective_session_id = session_id or getattr(run, "session_id", None)
     conversation_text = format_conversation(messages)
-    status = json.dumps(sub_tasks)
 
     threading.Thread(
         target=judge_and_route,
         args=(
-            conversation_text, status, run.id, run.trace_id,
+            conversation_text, decision_text, run.id, effective_session_id, run.trace_id,
             SYSTEM_PROMPT, FEEDBACK_KEY, GOOD_QUEUE_ID, CORRECTION_QUEUE_ID,
         ),
         kwargs={"extra_context": _get_categories_context()},

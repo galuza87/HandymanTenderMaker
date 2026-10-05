@@ -1,5 +1,4 @@
 import re
-import json
 from backend.llm import get_llm
 from backend.v1.agents.base import GraphState
 from backend.v1.tools import fetch_available_categories
@@ -18,14 +17,13 @@ def multi_task_architect_node(state: GraphState) -> dict:
     and stripped before the message reaches the user.
 
     Args:
-        state: The current graph state. Reads `state["messages"]` and
-            `state["sub_tasks"]`.
+            state: The current graph state. Reads `state["messages"]` and
+            `state["session_id"]`.
 
     Returns:
-        A dict with updated `messages` and `sub_tasks` (appended to, not
-        replaced). `next_agent` is set to "IntakeCoordinator" once the
-        sub-task list has been parsed, or loops back to "MultiTaskArchitect"
-        if the agent still needs more information.
+        A dict with updated `messages`, `multi_task_decision`, and
+        `next_agent`. The decision is stored separately from the user-facing
+        message for online and historical evaluation.
 
     Note:
         Any change to this node's decision logic must be reflected in
@@ -50,13 +48,17 @@ def multi_task_architect_node(state: GraphState) -> dict:
         result = agent.invoke({"messages": state["messages"]})
         last_message = result["messages"][-1]
         content_str = last_message.content if hasattr(last_message, 'content') else last_message.get("content", "")
+        decision_text = ""
         
         if isinstance(content_str, str) and "ALL_DONE" in content_str:
             clean_content = content_str.replace("ALL_DONE", "").strip()
             import re
             match = re.search(r'\[.*\]', clean_content, re.DOTALL)
             if match:
+                decision_text = match.group(0)
                 clean_content = re.sub(r'\[.*\]', '', clean_content, flags=re.DOTALL).strip()
+            else:
+                decision_text = clean_content
                     
             if hasattr(last_message, 'content'):
                 result["messages"][-1] = AIMessage(content=clean_content)
@@ -68,11 +70,14 @@ def multi_task_architect_node(state: GraphState) -> dict:
             next_agent = "MultiTaskArchitect"
 
         # Fire the online judge with the node's real decision, not the error-fallback path.
-        multi_task_architect_judge.maybe_evaluate_async(state.get("messages", []), sub_tasks)
+        multi_task_architect_judge.maybe_evaluate_async(
+            state.get("messages", []), decision_text, state.get("session_id")
+        )
 
         return {
             "messages": result["messages"], 
-            "next_agent": next_agent
+            "next_agent": next_agent,
+            "multi_task_decision": decision_text,
         }
     except Exception as e:
         return {"messages": state["messages"] + [{"role": "assistant", "content": f"MultiTaskArchitect error: {e}"}]}
