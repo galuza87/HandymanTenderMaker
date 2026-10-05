@@ -45,7 +45,7 @@ def information_gatherer_node(state: GraphState) -> dict:
                 result["messages"][-1]["content"] = clean_content
 
         # Fire the online judge with the node's real decision, not the error-fallback path.
-        information_gatherer_judge.maybe_evaluate_async(state.get("messages", []))
+        information_gatherer_judge.maybe_evaluate_async(state.get("messages", []), state.get("session_id"))
 
         return {
             "messages": result["messages"], 

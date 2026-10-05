@@ -67,7 +67,8 @@ def contractor_categorizer_node(state: GraphState) -> dict:
             next_agent = "IntakeCoordinator"
 
             # Fire the online judge with the node's real decision, not the error-fallback path.
-            contractor_categorizer_judge.maybe_evaluate_async(state.get("messages", []), identified_categories)
+            category_id = identified_categories[-1].get("category_id") if identified_categories else None
+            contractor_categorizer_judge.maybe_evaluate_async(state.get("messages", []), category_id, state.get("session_id"))
 
             return {
                 "messages": result["messages"],

@@ -1,11 +1,3 @@
-"""Node-specific judge config and the inline (live-traffic) trigger for
-TenderCreator.
-
-Since the tender logic has been simplified, the finalized tender text is 
-now simply the `confirmed_job_description` from the node's inputs (state).
-Backfilling works by extracting this field from the run's inputs.
-"""
-
 import os
 import random
 import threading
@@ -36,16 +28,7 @@ Respond with strict JSON only: {"correct": true or false, "reasoning": "<one sen
 
 
 def extract_status_from_run(run) -> str | None:
-    """Extract the finalized tender text from a historical run.
-
-    The tender text is now the `confirmed_job_description` from the node's inputs.
-
-    Args:
-        run: A LangSmith Run object for one TenderCreator execution.
-
-    Returns:
-        The tender text, or None if missing.
-    """
+    """Expects: a LangSmith run. Modifies: nothing. Returns: confirmed tender text or None."""
     try:
         inputs = run.inputs or {}
         return inputs.get("confirmed_job_description") or inputs.get("state", {}).get("confirmed_job_description")
@@ -53,13 +36,8 @@ def extract_status_from_run(run) -> str | None:
         return None
 
 
-def maybe_evaluate_async(messages: list, tender_text: str) -> None:
-    """Fire the online judge for the finalized tender, on the live path.
-
-    Args:
-        messages: The conversation so far, as stored on `state["messages"]`.
-        tender_text: The finalized tender text for this project.
-    """
+def maybe_evaluate_async(messages: list, tender_text: str, session_id: str | None = None) -> None:
+    """Expects: messages, tender text, and optional node session ID. Modifies: starts background judge when sampling allows it. Returns: None."""
     if random.random() > SAMPLE_RATE:
         return
 
@@ -67,12 +45,13 @@ def maybe_evaluate_async(messages: list, tender_text: str) -> None:
     if run is None:
         return
 
+    effective_session_id = session_id or getattr(run, "session_id", None)
     conversation_text = format_conversation(messages)
 
     threading.Thread(
         target=judge_and_route,
         args=(
-            conversation_text, tender_text, run.id, run.trace_id,
+            conversation_text, tender_text, run.id, effective_session_id, run.trace_id,
             SYSTEM_PROMPT, FEEDBACK_KEY, GOOD_QUEUE_ID, CORRECTION_QUEUE_ID,
         ),
         daemon=True,

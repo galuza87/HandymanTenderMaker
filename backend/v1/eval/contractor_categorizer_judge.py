@@ -1,19 +1,3 @@
-"""Node-specific judge config and the inline (live-traffic) trigger for
-ContractorCategorizer.
-
-The judge is given a category_id -> name/description mapping (fetched
-once via `fetch_available_categories`, cached for the process lifetime)
-as extra context, so it can check whether the chosen ID actually matches
-the trade discussed -- not just whether the conversation makes some
-category assignment plausible. The category list is fetched straight
-from the DB-backed tool in Python, not via the judge model calling it
-itself -- there's no need for the Groq client to do tool-calling here.
-
-Still not covered: whether `identified_categories`' hardcoded
-"Categorized by AI" placeholder name should be a real one. That's a
-separate node-level fix, unrelated to this judge.
-"""
-
 import os
 import random
 import threading
@@ -52,17 +36,7 @@ _categories_context: str | None = None
 
 
 def _get_categories_context() -> str:
-    """Fetch (and cache) the category list as context text for the judge prompt.
-
-    Degrades gracefully on failure -- if the DB call fails, the judge
-    just falls back to reasoning from the conversation alone, same as
-    it did before this context existed, rather than blocking evaluation
-    entirely over a categories-lookup failure.
-
-    Returns:
-        A formatted "Available categories:\n..." string, or an empty
-        string if the lookup failed.
-    """
+    """Expects: nothing. Modifies: caches category text once. Returns: category context string."""
     global _categories_context
     if _categories_context is None:
         try:
@@ -74,20 +48,7 @@ def _get_categories_context() -> str:
 
 
 def _error_prefix_present(messages: list) -> bool:
-    """Check whether the node's own error-fallback text is in the transcript.
-
-    contractor_categorizer_node's except block appends a message
-    starting with "ContractorCategorizer error:" rather than setting a
-    real next_agent -- that's not a categorization decision, so runs
-    ending this way should be skipped rather than judged.
-
-    Args:
-        messages: The conversation, in either dict or LangChain-object
-            message shape.
-
-    Returns:
-        True if the last message is this node's error-fallback text.
-    """
+    """Expects: message list. Modifies: nothing. Returns: whether the last message is the node error prefix."""
     if not messages:
         return False
     last = messages[-1]
@@ -96,20 +57,7 @@ def _error_prefix_present(messages: list) -> bool:
 
 
 def extract_status_from_run(run) -> str | None:
-    """Reconstruct a historical run's identified category, if any.
-
-    Returns None both when the node is still gathering information
-    (next_agent looped back to "ContractorCategorizer") and when the
-    node hit its error-fallback path -- neither is a completed
-    categorization decision.
-
-    Args:
-        run: A LangSmith Run object for one ContractorCategorizer execution.
-
-    Returns:
-        The identified category_id as a string, or None if there's no
-        completed decision to judge.
-    """
+    """Expects: a LangSmith run. Modifies: nothing. Returns: final category ID or None."""
     messages = run.outputs.get("messages", [])
     if _error_prefix_present(messages):
         return None
@@ -121,21 +69,8 @@ def extract_status_from_run(run) -> str | None:
     return str(identified[-1].get("category_id"))
 
 
-def maybe_evaluate_async(messages: list, category_id: list) -> None:
-    """Fire the online judge for the current live ContractorCategorizer run.
-
-    Call this from inside `contractor_categorizer_node`, right after a
-    category_id is parsed out of the ALL_DONE_CATEGORY_<ID> sentinel --
-    not from the "still gathering information" branch, where there's no
-    completed decision yet.
-
-    Args:
-        messages: The conversation so far, as stored on `state["messages"]`.
-        category_id: The category_id just identified, or None if the
-            node is still gathering information -- call sites should
-            pass None (or skip calling) in that case, mirroring
-            `extract_status_from_run` above.
-    """
+def maybe_evaluate_async(messages: list, category_id: int | None, session_id: str | None = None) -> None:
+    """Expects: messages, category ID, and optional node session ID. Modifies: starts a background judge when sampling allows it. Returns: None."""
     if category_id is None or random.random() > SAMPLE_RATE:
         return
 
@@ -143,12 +78,13 @@ def maybe_evaluate_async(messages: list, category_id: list) -> None:
     if run is None:
         return
 
+    effective_session_id = session_id or getattr(run, "session_id", None)
     conversation_text = format_conversation(messages)
 
     threading.Thread(
         target=judge_and_route,
         args=(
-            conversation_text, str(category_id), run.id, run.trace_id,
+            conversation_text, str(category_id), run.id, effective_session_id, run.trace_id,
             SYSTEM_PROMPT, FEEDBACK_KEY, GOOD_QUEUE_ID, CORRECTION_QUEUE_ID,
         ),
         kwargs={"extra_context": _get_categories_context()},

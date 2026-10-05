@@ -76,7 +76,7 @@ def categorizer_node(state: GraphState) -> dict:
             next_agent = "MultiTaskArchitect"
 
         # Fire the online judge with the node's real decision, not the error-fallback path.
-        categorizer_judge.maybe_evaluate_async(state.get("messages", []), result.decision)
+        categorizer_judge.maybe_evaluate_async(state.get("messages", []), result.decision, state.get("session_id"))
 
         return {
             "CategorizerDecision": result,

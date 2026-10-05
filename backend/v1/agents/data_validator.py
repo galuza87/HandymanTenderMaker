@@ -40,7 +40,7 @@ def data_validator_node(state: GraphState) -> dict:
         parsed = llm.invoke(messages)
 
         # Fire the online judge with the node's real decision.
-        data_validator_judge.maybe_evaluate_async(state.get("messages", []), parsed.status)
+        data_validator_judge.maybe_evaluate_async(state.get("messages", []), parsed.status, state.get("session_id"))
 
         has_enough_data = parsed.status == "enough_information"
         missing_context = parsed.missing_context or "Could you provide more details about the scope of work and the area involved?"

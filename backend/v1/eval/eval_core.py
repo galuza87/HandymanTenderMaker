@@ -1,20 +1,3 @@
-"""Shared judge/feedback/queue-routing core for the HandymanDB online
-evaluators.
-
-Every node-specific judge module (data_validator_judge.py,
-categorizer_judge.py, ...) imports from here instead of duplicating this
-logic. This is what's called from two different places:
-
-- Inline, from inside a node itself, on a background thread, while a
-  real conversation is in flight (see e.g. data_validator_judge.py's
-  `maybe_evaluate_async`).
-- From backfill.py, synchronously, in a batch loop over historical runs.
-
-Keeping the core in one place means a run judged live and a run judged
-during backfill go through the exact same scoring and routing logic --
-there is only one place that logic can drift.
-"""
-
 import json
 import os
 from typing import Any, cast
@@ -22,12 +5,10 @@ from typing import Any, cast
 from langsmith import Client
 from openai import OpenAI
 
-# Two separate clients on purpose: one talks to LangSmith (reads runs,
-# writes feedback, manages queues), the other talks to the judge model.
-# Keeping them separate means swapping the judge backend later (Groq ->
-# Gemini, say) only touches `judge`, never `langsmith_client`.
-langsmith_client = Client()  # reads LANGSMITH_API_KEY from env
+# Langsmith client to fetch the project and run data
+langsmith_client = Client()
 
+# Judge client to use for LLM-as-a-judge evaluation
 judge = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.environ["GROQ_API_KEY"],
@@ -35,22 +16,7 @@ judge = OpenAI(
 
 
 def format_conversation(messages: list) -> str:
-    """Render a message list (dicts or LangChain objects) as plain text.
-
-    Shared across all node judge modules, since every node's judge
-    prompt needs the same conversation-to-text rendering regardless of
-    what decision it's judging.
-
-    Args:
-        messages: Conversation messages, in either the dict shape sent
-            over the API or the LangChain object shape stored on a
-            traced run's inputs (LangGraph runs store LangChain message
-            objects, e.g. AIMessage/HumanMessage, not plain dicts, so
-            both shapes are handled here).
-
-    Returns:
-        A newline-separated "role: content" transcript, in original order.
-    """
+    """Expects: message list. Modifies: nothing. Returns: newline transcript."""
     lines = []
     for m in messages:
         role = m.get("role") if isinstance(m, dict) else getattr(m, "type", "user")
@@ -60,30 +26,36 @@ def format_conversation(messages: list) -> str:
 
 
 def already_evaluated(run, feedback_key: str) -> bool:
-    """Check whether a run already has feedback under the given key.
-
-    Used by the backfill script to implement "was not evaluated yet" --
-    checked client-side against each run's `feedback_stats`, rather than
-    a server-side filter string, since there's no confirmed filter-DSL
-    operator for "run lacks feedback key X" and it's better to be
-    correct here than clever.
-
-    Args:
-        run: A LangSmith Run object, as returned by `Client.list_runs`.
-        feedback_key: The feedback key to check for, e.g.
-            "data_validator_correctness".
-
-    Returns:
-        True if the run already carries feedback under that key.
-    """
+    """Expects: run object and feedback key. Modifies: nothing. Returns: whether that key already exists."""
     stats = getattr(run, "feedback_stats", None) or {}
     return feedback_key in stats
+
+
+def resolve_feedback_session_id(session_id: str | None) -> str | None:
+    """Expects: optional LangSmith session ID. Modifies: nothing. Returns: a valid session/project UUID or None."""
+    if session_id and str(session_id).strip():
+        return str(session_id)
+
+    project_name = os.environ.get("LANGSMITH_PROJECT") or os.environ.get("LANGCHAIN_PROJECT")
+    if not project_name:
+        return None
+
+    try:
+        project = langsmith_client.read_project(project_name=project_name)
+        project_id = getattr(project, "id", None)
+        if project_id:
+            return str(project_id)
+    except Exception:
+        return None
+
+    return None
 
 
 def judge_and_route(
     conversation_text: str,
     status: str,
     run_id,
+    session_id,
     trace_id,
     system_prompt: str,
     feedback_key: str,
@@ -91,63 +63,23 @@ def judge_and_route(
     correction_queue_id: str | None,
     extra_context: str | None = None,
 ) -> None:
-    """Call the judge model and record its verdict against a specific run.
-
-    Generic across nodes -- the node-specific part is entirely the
-    `system_prompt` (what "correct" means for that node) and the
-    `feedback_key`/queue IDs (where the verdict gets recorded). Every
-    exception is caught and logged rather than raised, since this is
-    called both from a background thread during live traffic (where
-    raising would be invisible to anyone) and from a batch backfill
-    script (where one bad run shouldn't abort the whole run).
-
-    Two queues, not one: runs the judge marks correct go to
-    `good_queue_id`, where a human spot-checks before promoting into a
-    "confirmed good" dataset -- skipping that check would let the
-    judge's own blind spots quietly become ground truth. Runs the judge
-    flags go to `correction_queue_id`, where a human writes the
-    corrected expected output before it becomes a regression-test
-    example -- the judge can flag that something's wrong, but only a
-    human can supply what "right" should have looked like.
-
-    Args:
-        conversation_text: The conversation so far, already formatted
-            as plain text (see `format_conversation`).
-        status: The node's actual decision, in whatever short string
-            form its own judge prompt expects (e.g. "single"/"multiple",
-            "enough_information"/"not enough information").
-        run_id: The LangSmith run ID of the node execution being judged.
-        trace_id: The LangSmith trace ID that run belongs to -- passed
-            to `create_feedback` so the client can background the write
-            itself, on top of whatever threading the caller already does.
-        system_prompt: The node-specific judge instructions, ending in
-            an instruction to respond with strict JSON:
-            {"correct": true|false, "reasoning": "<one sentence>"}.
-        feedback_key: The feedback key this verdict is recorded under,
-            e.g. "data_validator_correctness". Also what
-            `already_evaluated` checks for during backfill.
-        good_queue_id: Annotation queue ID for judge-confirmed-correct
-            runs, or None if that queue isn't configured yet (e.g. its
-            env var is unset) -- queue routing is skipped in that case,
-            but the feedback score below is still recorded regardless.
-        correction_queue_id: Same as `good_queue_id`, for judge-flagged runs.
-        extra_context: Optional additional context appended to the
-            judge's user prompt, after the conversation and decision --
-            e.g. a category_id -> name/description mapping for nodes
-            whose correctness depends on category assignment (see
-            contractor_categorizer_judge.py, multi_task_architect_judge.py).
-    """
+    """Expects: judge data, run IDs, and session metadata. Modifies: scores and may route annotation queue. Returns: None."""
     try:
+        resolved_session_id = resolve_feedback_session_id(session_id)
+        if not resolved_session_id:
+            print(f"[online eval] skipping feedback for run {run_id}: LangSmith session_id/project_id is empty")
+            return
+
         user_prompt = f"Conversation:\n{conversation_text}\n\nNode's decision: {status}"
         if extra_context:
             user_prompt += f"\n\n{extra_context}"
 
-        # The OpenAI SDK's current type stubs expose ``chat`` as a method,
-        # although at runtime it is the completions resource used here.
+        # The OpenAI SDK's type stubs expose ``chat`` as a method, although at
+        # runtime it is the completions resource. Cast to Any to silence the
+        # false positive for this call only, rather than ignoring the whole file.
         completion = cast(Any, judge).chat.completions.create(
-            model=os.environ.get("EVAL_MODEL", "llama3-70b-8192"),
-            # Zero temperature: the verdict feeds a regression-test
-            # dataset, so it needs to be repeatable, not creatively varied.
+            model=os.environ.get("EVAL_MODEL", "openai/gpt-oss-120b"),
+            # Zero temperature: for repeatable verdicts, since we store it in regression-test dataaset
             temperature=0.0,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -175,6 +107,7 @@ def judge_and_route(
             key=feedback_key,
             score=1 if verdict["correct"] else 0,
             comment=verdict["reasoning"],
+            session_id=resolved_session_id,
         )
 
         target_queue = good_queue_id if verdict["correct"] else correction_queue_id
