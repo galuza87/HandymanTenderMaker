@@ -4,9 +4,12 @@ import sys
 # Add parent directory of 'backend' to python path so internal imports work
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from unittest.mock import patch
+
 from langsmith import evaluate, Client
 from backend.v1.engine import Engine, get_llm
 from backend.models import AgentState
+from backend.v1.eval.eval_core import resolve_feedback_session_id
 
 # Ensure we have our environment variables loaded
 from dotenv import load_dotenv
@@ -68,6 +71,14 @@ def appliance_fixing_evaluator(run, example) -> dict:
     is_appliance_fixing = "appliance" in cat_name or "dishwasher" in cat_name or "repair" in cat_name or "fixing" in cat_name
     
     return {"key": "appliance_fixing_identified", "score": 1 if is_appliance_fixing else 0}
+
+def test_resolve_feedback_session_id_uses_project_id_when_missing():
+    with patch.dict(os.environ, {"LANGSMITH_PROJECT": "handyman-test-project"}, clear=False):
+        with patch("backend.v1.eval.eval_core.langsmith_client.read_project") as mock_read_project:
+            mock_read_project.return_value.id = "project-uuid-123"
+
+            assert resolve_feedback_session_id(None) == "project-uuid-123"
+
 
 def main():
     print("Initializing LangSmith Client...")
