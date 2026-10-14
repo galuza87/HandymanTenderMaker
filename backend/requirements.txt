@@ -10,3 +10,5 @@ python-dotenv
 pyodbc
 deepagents
 sentence-transformers
+pytest
+httpx
