@@ -12,7 +12,7 @@ class Engine:
     def __init__(self, llm=None):
         pass
 
-    def process(self, state: AgentState) -> AgentState:
+    def _prepare_input_state(self, state: AgentState) -> dict:
         lc_messages = []
         for msg in state.messages:
             if msg.get("role") == "user":
@@ -29,7 +29,7 @@ class Engine:
             else:
                 lc_messages.append(HumanMessage(content=str(msg.get("content", ""))))
                 
-        input_state = {
+        return {
             "messages": lc_messages,
             "identified_categories": state.identified_categories,
             "client_info": state.client_info,
@@ -42,13 +42,8 @@ class Engine:
             "confirmed_job_description": state.confirmed_job_description,
             "is_finished": getattr(state, "is_finished", False)
         }
-        
-        logging.info(f"--- [Engine Process Start] next_step: {state.next_step} ---")
-        
-        final_state = app.invoke(input_state)  # type: ignore
-        
-        logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
-        # todo andrew need to handle it properly 
+
+    def _format_output_state(self, state: AgentState, final_state: dict) -> AgentState:
         new_messages = []
         for msg in final_state["messages"]:
             if isinstance(msg, HumanMessage):
@@ -88,3 +83,19 @@ class Engine:
             state.confirmed_job_description = final_state["confirmed_job_description"]
         
         return state
+
+    def process(self, state: AgentState) -> AgentState:
+        """Synchronously process the state using LangGraph."""
+        input_state = self._prepare_input_state(state)
+        logging.info(f"--- [Engine Process Start] next_step: {state.next_step} ---")
+        final_state = app.invoke(input_state)  # type: ignore
+        logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
+        return self._format_output_state(state, final_state)
+
+    async def aprocess(self, state: AgentState) -> AgentState:
+        """Asynchronously process the state using LangGraph's non-blocking ainvoke."""
+        input_state = self._prepare_input_state(state)
+        logging.info(f"--- [Engine Async Process Start] next_step: {state.next_step} ---")
+        final_state = await app.ainvoke(input_state)  # type: ignore
+        logging.info(f"--- [Engine Async Process End] returned next_agent: {final_state.get('next_agent')} ---")
+        return self._format_output_state(state, final_state)

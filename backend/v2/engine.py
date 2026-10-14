@@ -90,8 +90,7 @@ Instructions & Operational Rules:
    - After saving, give a friendly confirmation message to the user that their project has been logged and tenders have been sent to contractors.
 """
 
-    def process(self, state: AgentState) -> AgentState:
-        """Processes the state using the autonomous Deep Agent."""
+    def _prepare_execution(self, state: AgentState):
         client_info = state.client_info or {}
         user_id = state.user_id or 1
 
@@ -201,15 +200,9 @@ Instructions & Operational Rules:
             else:
                 lc_messages.append(HumanMessage(content=str(content)))
 
-        logging.info(f"--- [v2 Deep Agent Process Start] messages: {len(lc_messages)} ---")
+        return agent, lc_messages, runtime_data
 
-        try:
-            result = agent.invoke({"messages": lc_messages})
-            out_messages = result.get("messages", [])
-        except Exception as e:
-            logger.error(f"Error invoking Deep Agent: {e}")
-            out_messages = lc_messages + [AIMessage(content=f"I encountered an error processing your request: {e}")]
-
+    def _finalize_execution(self, state: AgentState, runtime_data: dict, lc_messages: list, out_messages: list) -> AgentState:
         # Convert LangChain messages back to serializable dicts
         new_messages = []
         for msg in out_messages:
@@ -253,14 +246,12 @@ Instructions & Operational Rules:
         if runtime_data["decision"]:
             state.CategorizerDecision = CategorizerDecisionClass(decision=runtime_data["decision"])
         elif not state.CategorizerDecision:
-            # Quick intent derivation for test runner single vs multiple if test suite runs intent test
             last_user_msg = ""
             for m in reversed(state.messages):
                 if m.get("role") == "user":
                     last_user_msg = m.get("content", "").lower()
                     break
             
-            # Simple heuristic check for contractor-intent test compatibility if needed
             if " and " in last_user_msg or " also " in last_user_msg or "multiple" in last_user_msg:
                 state.CategorizerDecision = CategorizerDecisionClass(decision="multiple")
             else:
@@ -268,6 +259,34 @@ Instructions & Operational Rules:
 
         logging.info(f"--- [v2 Deep Agent Process End] is_finished: {state.is_finished}, project_id: {state.project_id} ---")
         return state
+
+    def process(self, state: AgentState) -> AgentState:
+        """Processes the state synchronously using the autonomous Deep Agent."""
+        agent, lc_messages, runtime_data = self._prepare_execution(state)
+        logging.info(f"--- [v2 Deep Agent Process Start] messages: {len(lc_messages)} ---")
+
+        try:
+            result = agent.invoke({"messages": lc_messages})
+            out_messages = result.get("messages", [])
+        except Exception as e:
+            logger.error(f"Error invoking Deep Agent: {e}")
+            out_messages = lc_messages + [AIMessage(content=f"I encountered an error processing your request: {e}")]
+
+        return self._finalize_execution(state, runtime_data, lc_messages, out_messages)
+
+    async def aprocess(self, state: AgentState) -> AgentState:
+        """Processes the state asynchronously using the autonomous Deep Agent."""
+        agent, lc_messages, runtime_data = self._prepare_execution(state)
+        logging.info(f"--- [v2 Deep Agent Async Process Start] messages: {len(lc_messages)} ---")
+
+        try:
+            result = await agent.ainvoke({"messages": lc_messages})
+            out_messages = result.get("messages", [])
+        except Exception as e:
+            logger.error(f"Error asynchronously invoking Deep Agent: {e}")
+            out_messages = lc_messages + [AIMessage(content=f"I encountered an error processing your request: {e}")]
+
+        return self._finalize_execution(state, runtime_data, lc_messages, out_messages)
 
 # --- Studio-only entry point (does not affect production `process()` flow) ---
 def get_deep_agent():
