@@ -16,6 +16,7 @@ class GraphState(TypedDict, total=False):
     identified_categories: list
     client_info: dict
     confirmed_job_description: str
+    multi_task_decision: str
     next_agent: str
     ip_address: str
     session_id: str
