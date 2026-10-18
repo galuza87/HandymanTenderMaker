@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -45,6 +46,57 @@ elif ALGORITHM_VERSION == "v2":
     from backend.v2.engine import Engine
 else:
     raise ValueError(f"Unknown version: {ALGORITHM_VERSION}")
+
+
+def load_state_for_session(
+    session_id: str,
+    client_ip: str = "unknown",
+    user_id: Optional[int] = None
+) -> AgentState:
+    """Load existing session conversation state or create an initialized new state."""
+    state_dict = get_conversation(session_id)
+    if not state_dict:
+        state = AgentState(messages=[], session_id=session_id, ip_address=client_ip)
+    else:
+        if state_dict.get("CategorizerDecision") == {}:
+            state_dict["CategorizerDecision"] = None
+        state = AgentState(**state_dict)
+
+    state.ip_address = client_ip
+    if user_id is not None:
+        state.user_id = user_id
+
+    if state.user_id is not None and not state.client_info:
+        client = get_client_by_id(state.user_id)
+        if client:
+            state.client_info = {
+                "name": f"{client.get('name', '')} {client.get('last_name', '')}".strip(),
+                "phone": client.get("phone", ""),
+                "address": client.get("address", "") or "",
+            }
+
+    return state
+
+
+def format_chat_response(new_state: AgentState, old_msg_count: int) -> ChatResponse:
+    """Extract assistant response messages and state metadata into a ChatResponse."""
+    new_ai_messages = [
+        msg.get("content", "")
+        for msg in new_state.messages[old_msg_count:]
+        if msg.get("role") == "assistant" and msg.get("content", "").strip() != ""
+    ]
+
+    if new_ai_messages:
+        reply_text = "\n\n".join(new_ai_messages)
+    else:
+        reply_text = new_state.messages[-1].get("content", "") if new_state.messages else ""
+
+    return ChatResponse(
+        reply=reply_text,
+        identified_categories=new_state.identified_categories,
+        prompts=new_state.prompts,
+        collected_details=new_state.collected_details,
+    )
 
 
 def create_app() -> FastAPI:
@@ -156,26 +208,8 @@ def create_app() -> FastAPI:
         session_id = req.session_id
         client_ip = request.client.host if request.client else "unknown"
 
-        state_dict = get_conversation(session_id)
-        if not state_dict:
-            state = AgentState(messages=[], session_id=session_id, ip_address=client_ip)
-        else:
-            if state_dict.get("CategorizerDecision") == {}:
-                state_dict["CategorizerDecision"] = None
-            state = AgentState(**state_dict)
-
-        state.ip_address = client_ip
-        if req.user_id is not None:
-            state.user_id = req.user_id
-
-        if state.user_id is not None and not state.client_info:
-            client = get_client_by_id(state.user_id)
-            if client:
-                state.client_info = {
-                    "name": f"{client.get('name', '')} {client.get('last_name', '')}".strip(),
-                    "phone": client.get('phone', ''),
-                    "address": client.get('address', '') or "",
-                }
+        # 1. Load session state
+        state = load_state_for_session(session_id, client_ip=client_ip, user_id=req.user_id)
 
         msg_data = {"role": "user", "content": req.message}
         if req.image:
@@ -184,34 +218,37 @@ def create_app() -> FastAPI:
         state.messages.append(msg_data)
         old_msg_count = len(state.messages)
 
-        new_state = engine.process(state)
+        # 2. Synchronously snapshot state to JSON before spawning tasks to prevent race conditions
+        incoming_state_json = state.model_dump_json()
 
-        # Save session state to DB
-        save_conversation(
+        # 3. Start LLM call non-blockingly
+        llm_task = asyncio.create_task(engine.aprocess(state))
+
+        # 4. Concurrently save incoming user message to DB in worker thread
+        db_save_incoming_task = asyncio.create_task(
+            asyncio.to_thread(
+                save_conversation,
+                session_id=session_id,
+                client_id=state.user_id or 0,
+                state_json=incoming_state_json,
+                is_finished=False,
+            )
+        )
+
+        # 5. Wait for both concurrent operations to complete
+        new_state, _ = await asyncio.gather(llm_task, db_save_incoming_task)
+
+        # 6. Save final state with assistant's reply and any new project/prompts
+        await asyncio.to_thread(
+            save_conversation,
             session_id=session_id,
-            client_id=new_state.user_id if new_state.user_id else 0,
+            client_id=new_state.user_id or 0,
             state_json=new_state.model_dump_json(),
             is_finished=new_state.is_finished,
         )
 
-        # Gather all non-empty assistant messages generated in this turn
-        new_ai_messages = [
-            msg.get("content", "")
-            for msg in new_state.messages[old_msg_count:]
-            if msg.get("role") == "assistant" and msg.get("content", "").strip() != ""
-        ]
-
-        if new_ai_messages:
-            reply_text = "\n\n".join(new_ai_messages)
-        else:
-            reply_text = new_state.messages[-1].get("content", "") if new_state.messages else ""
-
-        return ChatResponse(
-            reply=reply_text,
-            identified_categories=new_state.identified_categories,
-            prompts=new_state.prompts,
-            collected_details=new_state.collected_details,
-        )
+        # 7. Format and return response
+        return format_chat_response(new_state, old_msg_count)
 
     return app
 
