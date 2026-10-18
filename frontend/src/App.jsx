@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
 import TestingDashboard from './TestingDashboard'
+import { useProgressiveWait } from './hooks/useProgressiveWait'
+import { WaitStatusBanner } from './components/WaitStatusBanner'
 
 function App() {
   // Auth States
@@ -29,6 +31,12 @@ function App() {
   const fileInputRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [image, setImage] = useState(null);
+
+  // Progressive wait tracking for high-traffic queue warnings
+  const { waitStage, bannerMessage, startWait, stopWait } = useProgressiveWait({
+    queuedDelayMs: 4000,
+    extendedDelayMs: 12000,
+  });
 
   // DB States
   const [categories, setCategories] = useState([]);
@@ -238,6 +246,7 @@ function App() {
     setInput('');
     setImage(null);
     setIsLoading(true);
+    startWait();
 
     try {
       const response = await fetch('/chat', {
@@ -267,6 +276,7 @@ function App() {
     } catch (error) {
       setMessages(prev => [...prev, { role: 'assistant', content: '❌ **Error**: Could not connect to the wizard backend server. Please verify the backend is running.' }]);
     } finally {
+      stopWait();
       setIsLoading(false);
     }
   };
@@ -470,8 +480,11 @@ function App() {
                 <div className="message-wrapper assistant">
                   <div className="message-content">
                     <div className="avatar">✨</div>
-                    <div className="text-bubble typing">
-                      <span className="dot"></span><span className="dot"></span><span className="dot"></span>
+                    <div className="text-bubble typing-container">
+                      <div className="typing-dots">
+                        <span className="dot"></span><span className="dot"></span><span className="dot"></span>
+                      </div>
+                      <WaitStatusBanner stage={waitStage} message={bannerMessage} variant="bubble" />
                     </div>
                   </div>
                 </div>
@@ -480,6 +493,9 @@ function App() {
             </div>
 
             <div className="input-area">
+              {isLoading && waitStage !== 'idle' && waitStage !== 'thinking' && (
+                <WaitStatusBanner stage={waitStage} message={bannerMessage} variant="dock" />
+              )}
               {isFinished ? (
                 <div style={{textAlign: 'center', padding: '15px', color: '#ffb74d', fontWeight: 'bold', background: 'rgba(255, 183, 77, 0.1)', borderRadius: '12px'}}>
                   🔒 Tender Sent - Conversation Closed
