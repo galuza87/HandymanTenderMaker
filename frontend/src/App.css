@@ -967,3 +967,140 @@ body {
   text-align: center;
   margin-top: 24px;
 }
+
+
+/* ==================== PROGRESSIVE LATENCY / WAIT BANNER ==================== */
+.typing-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 140px;
+}
+
+.typing-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wait-status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  animation: fadeInSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  backdrop-filter: blur(12px);
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
+}
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Variant Bubble (inside assistant message) */
+.wait-status-banner.variant-bubble {
+  margin-top: 4px;
+  max-width: 480px;
+}
+
+/* Variant Dock (floating directly above chat input) */
+.wait-status-banner.variant-dock {
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 10px;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4);
+}
+
+/* Queued Stage (amber/gold high demand theme) */
+.wait-status-banner.wait-badge-queued {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.08) 100%);
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
+}
+
+.wait-status-banner.wait-badge-queued .wait-status-icon {
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+}
+
+.wait-status-banner.wait-badge-queued .wait-status-text {
+  color: #fbbf24;
+}
+
+/* Extended Stage (purple/indigo deep processing theme) */
+.wait-status-banner.wait-badge-extended {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.14) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+}
+
+.wait-status-banner.wait-badge-extended .wait-status-icon {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.6));
+}
+
+.wait-status-banner.wait-badge-extended .wait-status-text {
+  color: #c4b5fd;
+}
+
+.wait-status-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.wait-status-icon {
+  font-size: 1.1rem;
+  z-index: 1;
+}
+
+.wait-pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.2;
+  animation: radarPulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
+
+@keyframes radarPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.wait-status-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wait-status-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.wait-status-subtext {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
