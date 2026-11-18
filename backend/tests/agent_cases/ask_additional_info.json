@@ -20,7 +20,6 @@
   },
   "options": {
     "dry_run": true,
-    "algorithm_version": "v1",
-    "timeout_seconds": 60
+    "algorithm_version": "v1"
   }
 }

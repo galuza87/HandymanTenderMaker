@@ -126,3 +126,33 @@ def test_chat_endpoint_concurrent_execution(mock_engine):
         assert "plumbing issue in my bathroom" in save_calls[0]["state_json"]
         assert "Hello! I can help you" in save_calls[1]["state_json"]
         assert save_calls[0]["is_finished"] is False
+
+
+def test_chat_endpoint_respects_request_timeout_seconds(monkeypatch):
+    """Test /chat endpoint enforces REQUEST_TIMEOUT_SECONDS from config.py and returns 504."""
+    import backend.config as config_mod
+
+    monkeypatch.setattr(config_mod, "REQUEST_TIMEOUT_SECONDS", 0.05)
+
+    slow_engine = MagicMock()
+
+    async def slow_aprocess(state: AgentState) -> AgentState:
+        await asyncio.sleep(0.3)
+        return state
+
+    slow_engine.aprocess = AsyncMock(side_effect=slow_aprocess)
+
+    with patch("backend.bootstrap.get_conversation", return_value=None), \
+         patch("backend.bootstrap.get_client_by_id", return_value=None), \
+         patch("backend.bootstrap.save_conversation"), \
+         patch("backend.bootstrap.Engine", return_value=slow_engine):
+
+        app = create_app()
+        client = TestClient(app)
+
+        response = client.post("/chat", json={
+            "session_id": "test-timeout-sess",
+            "message": "Hello",
+        })
+        assert response.status_code == 504
+        assert "timeout" in response.json()["detail"].lower()

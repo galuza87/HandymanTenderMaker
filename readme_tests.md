@@ -46,14 +46,27 @@ ENABLE_TEST_ENDPOINTS=true
 # Secret key required in X-Test-Api-Key or Authorization: Bearer <TEST_API_KEY>
 TEST_API_KEY=dev-test-api-key
 
-# Concurrency & timeout thresholds for 503 / 504 testing
+# Application-wide request timeout (used by both /chat and /api/v1/tests/*, configurable in backend/config.py or .env)
+REQUEST_TIMEOUT_SECONDS=60.0
+
+# Concurrency threshold for 503 testing
 MAX_ACTIVE_REQUESTS=10
-TEST_REQUEST_TIMEOUT_SECONDS=60.0
 ```
 
 - **Caller Authentication**: Pass `X-Test-Api-Key: <TEST_API_KEY>` or `Authorization: Bearer <TEST_API_KEY>`.
 - **Target Persona (`simulated_user_id`)**: Every test request includes `simulated_user_id` (e.g., `1`). The server verifies that this ID exists in `dbo.Clients` (returning `404 Not Found` if missing) and populates `state.user_id` and `state.client_info` (`name`, `phone`, `address`) from the database.
 - **Database Isolation (`dry_run: true`)**: By default, `options.dry_run` is `true`, which stubs out database writes (`create_project`, `create_project_prompt`) with mock project ID `9999` so test runs never pollute production/dev tables.
+
+### Timeout (`504`) & Concurrency (`503`) Configuration
+- **Single System Timeout (`REQUEST_TIMEOUT_SECONDS`)**: Defined in `backend/config.py` (`REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60.0"))`) and optionally overridden via `.env`. This single value governs **both** the main application (`/chat` endpoint and `ChatOpenAI` LLM client) and all agent testing endpoints (`/api/v1/tests/*`). When exceeded, the server aborts and returns **HTTP `504 Gateway Timeout`**.
+- **Concurrency Limit (`MAX_ACTIVE_REQUESTS`)**: Controls the maximum number of simultaneous in-flight test requests before the server immediately returns **HTTP `503 Service Unavailable`** (default: `10`).
+
+#### Where You See `504` Timeouts & Timing
+- **Single Request (`POST /api/v1/tests/process-state`)**: Returns HTTP `504` with `{"detail": "Gateway Timeout: Agent execution exceeded <N>s timeout."}`.
+- **Batch Job (`POST /api/v1/tests/jobs` / `scripts/run_test.py`)**:
+  - **CLI Output**: Shown in `HTTP Breakdown` (e.g., `{'200': 4, '504': 1}`) and `Failed Requests Breakdown`.
+  - **`backend/test_jobs/job_<job_id>/job.log`**: Logs the exact status and elapsed time in ms (e.g., `FAIL [req_05] test_id="..." | status=504 (Gateway Timeout: Agent execution exceeded 30s timeout.) | 30004ms`).
+  - **`summary.json` & `failed_requests.json`**: Records `status_code_breakdown["504"]`, `execution_time_ms`, and the timeout `error` message.
 
 ---
 
@@ -136,8 +149,7 @@ Executes a single turn from an injected `AgentState` and evaluates the action ta
   },
   "options": {
     "dry_run": true,
-    "algorithm_version": "v1",
-    "timeout_seconds": 60
+    "algorithm_version": "v1"
   }
 }
 ```

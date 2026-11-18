@@ -87,9 +87,11 @@ TENDER_CREATOR_CORRECTION_QUEUE_ID=os.getenv("TENDER_CREATOR_CORRECTION_QUEUE_ID
 # --- Groq
 GROQ_API_KEY=os.getenv("GROQ_API_KEY")
 
+# --- Application Request Configuration ---
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60.0"))
+
 # --- Agent Testing Endpoints Configuration ---
 ENABLE_TEST_ENDPOINTS = os.getenv("ENABLE_TEST_ENDPOINTS", "true").lower() == "true"
 TEST_API_KEY = os.getenv("TEST_API_KEY", "dev-test-api-key")
 MAX_ACTIVE_REQUESTS = int(os.getenv("MAX_ACTIVE_REQUESTS", "10"))
-TEST_REQUEST_TIMEOUT_SECONDS = float(os.getenv("TEST_REQUEST_TIMEOUT_SECONDS", "60.0"))
 

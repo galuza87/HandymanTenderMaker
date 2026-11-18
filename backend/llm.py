@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY
+from backend.config import LM_STUDIO_URL, LM_STUDIO_API_KEY, REQUEST_TIMEOUT_SECONDS
 from typing import Optional
 
 def get_llm(model_name: Optional[str] = "gpt-4o", temperature: float = 0.7) -> ChatOpenAI:
@@ -9,5 +9,6 @@ def get_llm(model_name: Optional[str] = "gpt-4o", temperature: float = 0.7) -> C
         base_url=LM_STUDIO_URL,
         api_key=LM_STUDIO_API_KEY,
         model_name=model_name,
-        temperature=temperature
+        temperature=temperature,
+        request_timeout=REQUEST_TIMEOUT_SECONDS,
     )

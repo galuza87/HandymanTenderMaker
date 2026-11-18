@@ -84,7 +84,6 @@ class StateTestOptions(BaseModel):
     """Execution options for a single state test turn."""
     dry_run: bool = True
     algorithm_version: Optional[str] = None
-    timeout_seconds: Optional[float] = None
 
 
 class StateTestRequest(BaseModel):

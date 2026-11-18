@@ -469,13 +469,17 @@ def test_capacity_limit_returns_503(client, monkeypatch):
     assert "capacity" in response.json()["detail"].lower()
 
 
-def test_execution_timeout_returns_504(client):
-    """When engine execution exceeds options.timeout_seconds, endpoint returns 504."""
+def test_execution_timeout_returns_504(client, monkeypatch):
+    """When engine execution exceeds config.REQUEST_TIMEOUT_SECONDS, endpoint returns 504."""
+    import backend.config as config_mod
+
+    monkeypatch.setattr(config_mod, "REQUEST_TIMEOUT_SECONDS", 0.05)
+    assert not hasattr(config_mod, "TEST_REQUEST_TIMEOUT_SECONDS")
+
     slow_engine = FakeEngine("ask_info", delay_seconds=0.3)
     payload = {
         "simulated_user_id": 1,
         "state": {"messages": [{"role": "user", "content": "Hello"}]},
-        "options": {"timeout_seconds": 0.05},
     }
     with patch("backend.v1.routes.testing.get_client_by_id", return_value=MOCK_CLIENT), \
          patch("backend.v1.routes.testing.load_engine", return_value=slow_engine):

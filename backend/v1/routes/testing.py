@@ -43,7 +43,6 @@ router = APIRouter()
 ALGORITHM_VERSION = os.getenv("ALGORITHM_VERSION", "v2")
 ENABLE_TEST_ENDPOINTS: bool = getattr(app_config, "ENABLE_TEST_ENDPOINTS", True)
 MAX_ACTIVE_REQUESTS: int = getattr(app_config, "MAX_ACTIVE_REQUESTS", 10)
-TEST_REQUEST_TIMEOUT_SECONDS: float = getattr(app_config, "TEST_REQUEST_TIMEOUT_SECONDS", 60.0)
 TEST_JOBS_DIR: Path = Path(__file__).resolve().parents[2] / "test_jobs"
 
 _active_requests: int = 0
@@ -137,11 +136,7 @@ async def _execute_single_state_test(req: StateTestRequest) -> StateTestResponse
     options = req.options
     dry_run = options.dry_run if options is not None else True
     version_str = options.algorithm_version if options is not None else None
-    timeout_sec = (
-        options.timeout_seconds
-        if (options is not None and options.timeout_seconds is not None)
-        else TEST_REQUEST_TIMEOUT_SECONDS
-    )
+    timeout_sec = getattr(app_config, "REQUEST_TIMEOUT_SECONDS", 60.0)
 
     state_before = _prepare_simulated_state(req)
     working_state = state_before.model_copy(deep=True)

@@ -17,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # --- Internal imports             --- #
+import backend.config as app_config
 from backend.db import (
     create_client,
     get_all_categories,
@@ -235,8 +236,20 @@ def create_app() -> FastAPI:
             )
         )
 
-        # 5. Wait for both concurrent operations to complete
-        new_state, _ = await asyncio.gather(llm_task, db_save_incoming_task)
+        # 5. Wait for both concurrent operations to complete within REQUEST_TIMEOUT_SECONDS
+        timeout_sec = app_config.REQUEST_TIMEOUT_SECONDS
+        try:
+            new_state, _ = await asyncio.wait_for(
+                asyncio.gather(llm_task, db_save_incoming_task),
+                timeout=timeout_sec,
+            )
+        except asyncio.TimeoutError as exc:
+            llm_task.cancel()
+            db_save_incoming_task.cancel()
+            raise HTTPException(
+                status_code=504,
+                detail=f"Gateway Timeout: Request exceeded {timeout_sec}s timeout.",
+            ) from exc
 
         # 6. Save final state with assistant's reply and any new project/prompts
         await asyncio.to_thread(
