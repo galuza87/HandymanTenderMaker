@@ -1,0 +1,38 @@
+{
+  "test_id": "request_hitl_confirmation",
+  "simulated_user_id": 1,
+  "state": {
+    "session_id": "test-session-hitl",
+    "messages": [
+      {
+        "role": "user",
+        "content": "I need a plumber to fix a leaking PVC trap under the kitchen sink. It is a slow drip, accessible inside the cabinet."
+      }
+    ],
+    "identified_categories": [
+      {
+        "category_id": 1,
+        "name": "Plumbing"
+      }
+    ],
+    "CategorizerDecision": {
+      "decision": "single"
+    },
+    "next_step": "IntakeCoordinator",
+    "has_fetched_past_feedback": true,
+    "open_topics": [],
+    "is_finished": false
+  },
+  "expected_outcome": {
+    "outcome_type": "request_hitl",
+    "expected_state_fields": {
+      "next_step": "IntakeCoordinator",
+      "is_finished": false
+    }
+  },
+  "options": {
+    "dry_run": true,
+    "algorithm_version": "v1",
+    "timeout_seconds": 60
+  }
+}

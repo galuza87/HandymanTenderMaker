@@ -53,12 +53,13 @@ def tender_creator_node(state: GraphState) -> dict:
         
     for cat in identified_categories:
         cat_id = cat.get("category_id")
-        create_project_prompt(
-            project_id=project_id, 
-            category_id=cat_id, 
-            prompt_text=confirmed_job_description,
-            embedding=embedding
-        )
+        if not state.get("dry_run", False):
+            create_project_prompt(
+                project_id=project_id, 
+                category_id=cat_id, 
+                prompt_text=confirmed_job_description,
+                embedding=embedding
+            )
         
     new_messages.append(AIMessage(content=f"Tenders have been finalized and saved for {len(identified_categories)} categories!"))
 

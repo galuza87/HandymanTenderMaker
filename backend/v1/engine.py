@@ -12,20 +12,26 @@ class Engine:
     def __init__(self, llm=None):
         pass
 
-    def _prepare_input_state(self, state: AgentState) -> dict:
+    def _prepare_input_state(self, state: AgentState, dry_run: bool = False) -> dict:
         lc_messages = []
         for msg in state.messages:
             if msg.get("role") == "user":
                 lc_messages.append(HumanMessage(content=msg.get("content", "")))
             elif msg.get("role") == "assistant":
                 kwargs = {"content": msg.get("content", "")}
-                if "tool_calls" in msg:
+                if "tool_calls" in msg and msg["tool_calls"]:
                     kwargs["tool_calls"] = msg["tool_calls"]
                 lc_messages.append(AIMessage(**kwargs))
             elif msg.get("role") == "system":
                 lc_messages.append(SystemMessage(content=msg.get("content", "")))
             elif msg.get("role") == "tool":
-                lc_messages.append(ToolMessage(content=msg.get("content", ""), tool_call_id=msg.get("tool_call_id", "unknown")))
+                lc_messages.append(
+                    ToolMessage(
+                        content=msg.get("content", ""),
+                        tool_call_id=msg.get("tool_call_id", "unknown"),
+                        name=msg.get("name", "tool"),
+                    )
+                )
             else:
                 lc_messages.append(HumanMessage(content=str(msg.get("content", ""))))
                 
@@ -40,7 +46,10 @@ class Engine:
             "CategorizerDecision": state.CategorizerDecision if hasattr(state, 'CategorizerDecision') and state.CategorizerDecision else None,
             "project_id": state.project_id,
             "confirmed_job_description": state.confirmed_job_description,
-            "is_finished": getattr(state, "is_finished", False)
+            "is_finished": getattr(state, "is_finished", False),
+            "open_topics": getattr(state, "open_topics", []),
+            "has_fetched_past_feedback": getattr(state, "has_fetched_past_feedback", False),
+            "dry_run": dry_run,
         }
 
     def _format_output_state(self, state: AgentState, final_state: dict) -> AgentState:
@@ -56,7 +65,14 @@ class Engine:
             elif isinstance(msg, SystemMessage):
                 new_messages.append({"role": "system", "content": str(msg.content)})
             elif isinstance(msg, ToolMessage):
-                new_messages.append({"role": "tool", "content": str(msg.content), "tool_call_id": getattr(msg, "tool_call_id", "unknown")})
+                tool_dict = {
+                    "role": "tool",
+                    "content": str(msg.content),
+                    "tool_call_id": getattr(msg, "tool_call_id", "unknown"),
+                }
+                if getattr(msg, "name", None):
+                    tool_dict["name"] = getattr(msg, "name")
+                new_messages.append(tool_dict)
             else:
                 if isinstance(msg, dict):
                     new_messages.append({"role": msg.get("role", "unknown"), "content": str(msg.get("content", ""))})
@@ -66,6 +82,9 @@ class Engine:
         state.messages = new_messages
         state.next_step = final_state.get("next_agent", "DataValidator")
         
+        if "identified_categories" in final_state and final_state["identified_categories"] is not None:
+            state.identified_categories = final_state["identified_categories"]
+
         if "CategorizerDecision" in final_state and final_state["CategorizerDecision"]:
             state.CategorizerDecision = final_state["CategorizerDecision"]
         else:
@@ -81,21 +100,27 @@ class Engine:
             
         if "confirmed_job_description" in final_state:
             state.confirmed_job_description = final_state["confirmed_job_description"]
+
+        if "open_topics" in final_state and final_state["open_topics"] is not None:
+            state.open_topics = final_state["open_topics"]
+
+        if "has_fetched_past_feedback" in final_state:
+            state.has_fetched_past_feedback = bool(final_state["has_fetched_past_feedback"])
         
         return state
 
-    def process(self, state: AgentState) -> AgentState:
+    def process(self, state: AgentState, dry_run: bool = False) -> AgentState:
         """Synchronously process the state using LangGraph."""
-        input_state = self._prepare_input_state(state)
-        logging.info(f"--- [Engine Process Start] next_step: {state.next_step} ---")
+        input_state = self._prepare_input_state(state, dry_run=dry_run)
+        logging.info(f"--- [Engine Process Start] next_step: {state.next_step} (dry_run={dry_run}) ---")
         final_state = app.invoke(input_state)  # type: ignore
         logging.info(f"--- [Engine Process End] returned next_agent: {final_state.get('next_agent')} ---")
         return self._format_output_state(state, final_state)
 
-    async def aprocess(self, state: AgentState) -> AgentState:
+    async def aprocess(self, state: AgentState, dry_run: bool = False) -> AgentState:
         """Asynchronously process the state using LangGraph's non-blocking ainvoke."""
-        input_state = self._prepare_input_state(state)
-        logging.info(f"--- [Engine Async Process Start] next_step: {state.next_step} ---")
+        input_state = self._prepare_input_state(state, dry_run=dry_run)
+        logging.info(f"--- [Engine Async Process Start] next_step: {state.next_step} (dry_run={dry_run}) ---")
         final_state = await app.ainvoke(input_state)  # type: ignore
         logging.info(f"--- [Engine Async Process End] returned next_agent: {final_state.get('next_agent')} ---")
         return self._format_output_state(state, final_state)

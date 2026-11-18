@@ -1,0 +1,34 @@
+{
+  "test_id": "tool_use_categories",
+  "simulated_user_id": 1,
+  "state": {
+    "session_id": "test-session-tool-use",
+    "messages": [
+      {
+        "role": "user",
+        "content": "I need a plumber to fix a leaking pipe under my kitchen sink."
+      }
+    ],
+    "next_step": "ContractorCategorizer",
+    "CategorizerDecision": {
+      "decision": "single"
+    },
+    "is_finished": false
+  },
+  "expected_outcome": {
+    "outcome_type": "tool_use",
+    "expected_tools": [
+      {
+        "name": "fetch_available_categories"
+      }
+    ],
+    "expected_state_fields": {
+      "next_step": "IntakeCoordinator"
+    }
+  },
+  "options": {
+    "dry_run": true,
+    "algorithm_version": "v1",
+    "timeout_seconds": 60
+  }
+}

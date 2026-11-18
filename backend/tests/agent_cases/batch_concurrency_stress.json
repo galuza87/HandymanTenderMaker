@@ -1,0 +1,63 @@
+{
+  "job_name": "batch_concurrency_stress",
+  "concurrency": 5,
+  "fail_fast": false,
+  "requests": [
+    {
+      "test_id": "load_spike_01",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "stress-01",
+        "messages": [{"role": "user", "content": "Hello, I need help with a repair."}],
+        "next_step": "DataValidator"
+      },
+      "expected_outcome": {"outcome_type": "ask_additional_info"},
+      "options": {"dry_run": true, "algorithm_version": "v1", "timeout_seconds": 30}
+    },
+    {
+      "test_id": "load_spike_02",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "stress-02",
+        "messages": [{"role": "user", "content": "Need someone to fix a door hinge."}],
+        "next_step": "ContractorCategorizer",
+        "CategorizerDecision": {"decision": "single"}
+      },
+      "expected_outcome": {"outcome_type": "tool_use"},
+      "options": {"dry_run": true, "algorithm_version": "v1", "timeout_seconds": 30}
+    },
+    {
+      "test_id": "load_spike_03",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "stress-03",
+        "messages": [{"role": "user", "content": "Hi there"}],
+        "next_step": "DataValidator"
+      },
+      "expected_outcome": {"outcome_type": "ask_additional_info"},
+      "options": {"dry_run": true, "algorithm_version": "v1", "timeout_seconds": 30}
+    },
+    {
+      "test_id": "load_spike_04",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "stress-04",
+        "messages": [{"role": "user", "content": "Can you help me?"}],
+        "next_step": "DataValidator"
+      },
+      "expected_outcome": {"outcome_type": "ask_additional_info"},
+      "options": {"dry_run": true, "algorithm_version": "v1", "timeout_seconds": 30}
+    },
+    {
+      "test_id": "load_spike_05",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "stress-05",
+        "messages": [{"role": "user", "content": "Good morning"}],
+        "next_step": "DataValidator"
+      },
+      "expected_outcome": {"outcome_type": "ask_additional_info"},
+      "options": {"dry_run": true, "algorithm_version": "v1", "timeout_seconds": 30}
+    }
+  ]
+}

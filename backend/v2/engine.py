@@ -49,6 +49,41 @@ class SaveProjectInput(BaseModel):
     general_description: str = Field(description="High-level overview summary of the entire project scope")
     prompts: List[PromptInput] = Field(description="List of one or more tenders (prompts) categorized by trade")
 
+def _process_prompts_list(
+    project_id: int,
+    prompts: List[Dict[str, Any]],
+    dry_run: bool,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Format and optionally persist tender prompts for a created project."""
+    formatted_prompts: List[Dict[str, Any]] = []
+    categories_found: List[Dict[str, Any]] = []
+    if not isinstance(prompts, list):
+        return formatted_prompts, categories_found
+
+    for idx, p in enumerate(prompts, start=1):
+        p_dict = p if isinstance(p, dict) else (p.model_dump() if hasattr(p, "model_dump") else dict(p))
+        cat_id = p_dict.get("category_id", 1)
+        prompt_text = p_dict.get("prompt_text", "")
+
+        if not dry_run:
+            create_project_prompt(
+                project_id=project_id,
+                category_id=cat_id,
+                prompt_text=prompt_text,
+            )
+
+        formatted_prompts.append({
+            "id": idx,
+            "category_id": cat_id,
+            "prompt_text": prompt_text,
+        })
+        categories_found.append({
+            "category_id": cat_id,
+            "name": prompt_text[:30] + "...",
+        })
+    return formatted_prompts, categories_found
+
+
 class Engine:
     """Algorithm Engine v2 - Autonomous Deep Agent implementation"""
 
@@ -90,7 +125,7 @@ Instructions & Operational Rules:
    - After saving, give a friendly confirmation message to the user that their project has been logged and tenders have been sent to contractors.
 """
 
-    def _prepare_execution(self, state: AgentState):
+    def _prepare_execution(self, state: AgentState, dry_run: bool = False):
         client_info = state.client_info or {}
         user_id = state.user_id or 1
 
@@ -111,40 +146,22 @@ Instructions & Operational Rules:
             prompts: List[Dict[str, Any]]
         ) -> str:
             try:
-                # 1. Create project
+                # 1. Create project (or use mock ID in dry_run mode)
                 comments = f"Name: {name}, Phone: {phone}, Address: {address}"
-                project_id = create_project(
-                    client_id=user_id,
-                    description=general_description,
-                    comments=comments
-                )
+                if dry_run:
+                    project_id = 9999
+                else:
+                    project_id = create_project(
+                        client_id=user_id,
+                        description=general_description,
+                        comments=comments
+                    )
                 runtime_data["project_id"] = project_id
 
                 # 2. Create prompts & tenders
-                formatted_prompts = []
-                categories_found = []
-
-                if isinstance(prompts, list):
-                    for idx, p in enumerate(prompts, start=1):
-                        p_dict = p if isinstance(p, dict) else (p.model_dump() if hasattr(p, "model_dump") else dict(p))
-                        cat_id = p_dict.get("category_id", 1)
-                        prompt_text = p_dict.get("prompt_text", "")
-
-                        create_project_prompt(
-                            project_id=project_id,
-                            category_id=cat_id,
-                            prompt_text=prompt_text
-                        )
-
-                        formatted_prompts.append({
-                            "id": idx,
-                            "category_id": cat_id,
-                            "prompt_text": prompt_text
-                        })
-                        categories_found.append({
-                            "category_id": cat_id,
-                            "name": prompt_text[:30] + "..."
-                        })
+                formatted_prompts, categories_found = _process_prompts_list(
+                    project_id, prompts, dry_run
+                )
 
                 runtime_data["prompts"] = formatted_prompts
                 runtime_data["identified_categories"] = categories_found
@@ -260,10 +277,10 @@ Instructions & Operational Rules:
         logging.info(f"--- [v2 Deep Agent Process End] is_finished: {state.is_finished}, project_id: {state.project_id} ---")
         return state
 
-    def process(self, state: AgentState) -> AgentState:
+    def process(self, state: AgentState, dry_run: bool = False) -> AgentState:
         """Processes the state synchronously using the autonomous Deep Agent."""
-        agent, lc_messages, runtime_data = self._prepare_execution(state)
-        logging.info(f"--- [v2 Deep Agent Process Start] messages: {len(lc_messages)} ---")
+        agent, lc_messages, runtime_data = self._prepare_execution(state, dry_run=dry_run)
+        logging.info(f"--- [v2 Deep Agent Process Start] messages: {len(lc_messages)} (dry_run={dry_run}) ---")
 
         try:
             result = agent.invoke({"messages": lc_messages})
@@ -274,10 +291,10 @@ Instructions & Operational Rules:
 
         return self._finalize_execution(state, runtime_data, lc_messages, out_messages)
 
-    async def aprocess(self, state: AgentState) -> AgentState:
+    async def aprocess(self, state: AgentState, dry_run: bool = False) -> AgentState:
         """Processes the state asynchronously using the autonomous Deep Agent."""
-        agent, lc_messages, runtime_data = self._prepare_execution(state)
-        logging.info(f"--- [v2 Deep Agent Async Process Start] messages: {len(lc_messages)} ---")
+        agent, lc_messages, runtime_data = self._prepare_execution(state, dry_run=dry_run)
+        logging.info(f"--- [v2 Deep Agent Async Process Start] messages: {len(lc_messages)} (dry_run={dry_run}) ---")
 
         try:
             result = await agent.ainvoke({"messages": lc_messages})

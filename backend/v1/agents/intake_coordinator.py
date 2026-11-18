@@ -113,9 +113,12 @@ def intake_node(state: GraphState) -> dict:
         Saves the final confirmed document text. The user MUST explicitly say 'Yes' to this document before you call this tool.
         """
         try:
-            client_id = state.get("user_id", 1)
-            # Create a simple project record just to have a project ID. The TenderCreator will save the actual prompts.
-            project_id = create_project(client_id=client_id, description="Drafting structured document...", comments="")
+            if state.get("dry_run", False):
+                project_id = 9999
+            else:
+                client_id = state.get("user_id", 1)
+                # Create a simple project record just to have a project ID. The TenderCreator will save the actual prompts.
+                project_id = create_project(client_id=client_id, description="Drafting structured document...", comments="")
             
             # We return a specific token to signal success and pass the document text
             return f"SAVED_PROJECT_{project_id}_WITH_DOC:\n{document_markdown}"

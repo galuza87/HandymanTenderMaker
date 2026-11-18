@@ -1,0 +1,105 @@
+{
+  "job_name": "batch_smoke_suite",
+  "concurrency": 2,
+  "fail_fast": false,
+  "requests": [
+    {
+      "test_id": "smoke_01_ask_info",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "smoke-ask-info",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello, I need help."
+          }
+        ],
+        "next_step": "DataValidator",
+        "is_finished": false
+      },
+      "expected_outcome": {
+        "outcome_type": "ask_additional_info",
+        "expected_state_fields": {
+          "is_finished": false
+        }
+      },
+      "options": {
+        "dry_run": true,
+        "algorithm_version": "v1",
+        "timeout_seconds": 60
+      }
+    },
+    {
+      "test_id": "smoke_02_tool_use",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "smoke-tool-use",
+        "messages": [
+          {
+            "role": "user",
+            "content": "I need a plumber to fix a leaking pipe under my kitchen sink."
+          }
+        ],
+        "next_step": "ContractorCategorizer",
+        "CategorizerDecision": {
+          "decision": "single"
+        },
+        "is_finished": false
+      },
+      "expected_outcome": {
+        "outcome_type": "tool_use",
+        "expected_tools": [
+          {
+            "name": "fetch_available_categories"
+          }
+        ],
+        "expected_state_fields": {
+          "next_step": "IntakeCoordinator"
+        }
+      },
+      "options": {
+        "dry_run": true,
+        "algorithm_version": "v1",
+        "timeout_seconds": 60
+      }
+    },
+    {
+      "test_id": "smoke_03_request_hitl",
+      "simulated_user_id": 1,
+      "state": {
+        "session_id": "smoke-hitl",
+        "messages": [
+          {
+            "role": "user",
+            "content": "I need a plumber to fix a leaking PVC pipe under my kitchen sink."
+          }
+        ],
+        "identified_categories": [
+          {
+            "category_id": 1,
+            "name": "Plumbing"
+          }
+        ],
+        "CategorizerDecision": {
+          "decision": "single"
+        },
+        "next_step": "IntakeCoordinator",
+        "has_fetched_past_feedback": true,
+        "open_topics": [],
+        "is_finished": false
+      },
+      "expected_outcome": {
+        "outcome_type": "request_hitl",
+        "expected_state_fields": {
+          "next_step": "IntakeCoordinator",
+          "is_finished": false
+        }
+      },
+      "options": {
+        "dry_run": true,
+        "algorithm_version": "v1",
+        "timeout_seconds": 60
+      }
+    }
+  ]
+}

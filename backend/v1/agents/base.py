@@ -26,3 +26,5 @@ class GraphState(TypedDict, total=False):
     is_finished: bool
     open_topics: list
     has_fetched_past_feedback: bool
+    dry_run: bool
+
