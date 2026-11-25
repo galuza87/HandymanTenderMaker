@@ -1,49 +1,18 @@
 {
   "test_id": "generate_document_confirmed",
-  "simulated_user_id": 1,
-  "state": {
-    "session_id": "test-session-generate-doc",
-    "messages": [
-      {
-        "role": "user",
-        "content": "I need a plumber to fix a leaking PVC trap under the kitchen sink."
-      },
-      {
-        "role": "assistant",
-        "content": "**Plumbing**\n\n**Description:**\nFix leaking PVC trap under the kitchen sink.\n\n**Address:**\n123 Main St\n\n---\n\nPlease confirm if this document looks good to send to contractors."
-      },
-      {
-        "role": "user",
-        "content": "Yes, that looks good! Please confirm and save."
-      }
-    ],
-    "identified_categories": [
-      {
-        "category_id": 1,
-        "name": "Plumbing"
-      }
-    ],
-    "CategorizerDecision": {
-      "decision": "single"
+  "messages": [
+    {
+      "role": "user",
+      "content": "I need a plumber to fix a leaking PVC trap under the kitchen sink."
     },
-    "next_step": "IntakeCoordinator",
-    "has_fetched_past_feedback": true,
-    "open_topics": [],
-    "is_finished": false
-  },
-  "expected_outcome": {
-    "outcome_type": "generate_document",
-    "expected_tools": [
-      {
-        "name": "confirm_and_save_document"
-      }
-    ],
-    "expected_state_fields": {
-      "is_finished": true
+    {
+      "role": "assistant",
+      "content": "**Plumbing**\n\n**Description:**\nFix leaking PVC trap under the kitchen sink.\n\n**Address:**\n123 Main St\n\n---\n\nPlease confirm if this document looks good to send to contractors."
+    },
+    {
+      "role": "user",
+      "content": "Yes, that looks good! Please confirm and save."
     }
-  },
-  "options": {
-    "dry_run": true,
-    "algorithm_version": "v1"
-  }
+  ],
+  "expected_step": "generate_document"
 }

@@ -203,8 +203,7 @@ Rather than hiding concurrency limits behind an infinite wait queue, the testing
 1. **Non-Blocking Worker Execution (`asyncio.to_thread`)**:
    - Synchronous graph/LLM execution runs inside `asyncio.to_thread(engine.process, isolated_state, dry_run=dry_run)` so FastAPI's event loop stays responsive and can accurately track in-flight requests and timeouts.
 2. **`503 Service Unavailable` (Capacity / Overload Limit)**:
-   - The server tracks `active_requests` in flight.
-   - Instead of silently queuing excess requests forever, if active concurrent requests exceed the system capacity threshold (`MAX_ACTIVE_REQUESTS`, configurable per environment or test run) or when the underlying worker/connection pool is exhausted, the endpoint immediately rejects the request with **HTTP `503 Service Unavailable`** (`{"detail": "Server at maximum concurrent capacity", "active_requests": N}`).
+   - When concurrent requests exceed the underlying server, worker pool, or upstream LLM capacity, the endpoint surfaces **HTTP `503 Service Unavailable`**. We include an automated test (`test_max_requests_before_503_error`) that tests the maximum number of concurrent requests before starting to receive `503` errors.
 3. **`504 Gateway Timeout` (LLM / Execution Timeout)**:
    - Each turn execution is wrapped in `asyncio.wait_for(..., timeout=timeout_seconds)` (default configurable via `TEST_REQUEST_TIMEOUT_SECONDS`, e.g., `30s`, or overridden per request via `options.timeout_seconds`).
    - When high concurrency causes the LLM backend (e.g., LM Studio or OpenAI) to stall or take longer than the allowed threshold, the server aborts waiting and returns **HTTP `504 Gateway Timeout`**.

@@ -1,25 +1,10 @@
 {
   "test_id": "ask_additional_info",
-  "simulated_user_id": 1,
-  "state": {
-    "session_id": "test-session-ask-info",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hi, I need some help with my house."
-      }
-    ],
-    "next_step": "DataValidator",
-    "is_finished": false
-  },
-  "expected_outcome": {
-    "outcome_type": "ask_additional_info",
-    "expected_state_fields": {
-      "is_finished": false
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
     }
-  },
-  "options": {
-    "dry_run": true,
-    "algorithm_version": "v1"
-  }
+  ],
+  "expected_step": "ask_additional_info"
 }

@@ -38,6 +38,7 @@ from backend.models import (
     RegisterRequest,
     UpdateClientRequest,
 )
+from backend.services.jwt_auth import create_jwt_token, extract_client_id_from_jwt
 
 # --- Harness algorithm version    --- #
 ALGORITHM_VERSION = os.getenv("ALGORITHM_VERSION", "v2")
@@ -100,6 +101,35 @@ def format_chat_response(new_state: AgentState, old_msg_count: int) -> ChatRespo
     )
 
 
+def _resolve_request_client_id(
+    request: Request,
+    fallback_user_id: Optional[int] = None,
+) -> Optional[int]:
+    """Resolve client_id from `Authorization: Bearer <token>` header if provided, else fallback."""
+    auth_header = request.headers.get("Authorization", "").strip()
+    if not auth_header.lower().startswith("bearer "):
+        return fallback_user_id
+
+    bearer_val = auth_header[7:].strip()
+    if not bearer_val:
+        return fallback_user_id
+
+    test_key = request.headers.get("X-Test-Api-Key")
+    expected_key = getattr(app_config, "TEST_API_KEY", None) or os.getenv(
+        "TEST_API_KEY", "dev-test-api-key"
+    )
+    if test_key is not None and test_key == expected_key:
+        try:
+            return int(bearer_val)
+        except ValueError:
+            return fallback_user_id
+
+    try:
+        return extract_client_id_from_jwt(bearer_val)
+    except ValueError:
+        return fallback_user_id
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI app instance with startup wiring and routes.
 
@@ -115,9 +145,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Import router after app creation to keep route registration clean.
-    from backend.v1.routes.testing import router as testing_router
-    app.include_router(testing_router, prefix="/api/v1/tests", tags=["Testing"])
+    # Import version-agnostic testing router mounted with {version} path parameter.
+    from backend.routes.testing import router as testing_router
+    app.include_router(testing_router, prefix="/api/{version}/tests", tags=["Testing"])
 
     @app.on_event("startup")
     def startup_event() -> None:
@@ -129,7 +159,8 @@ def create_app() -> FastAPI:
         client = get_client_by_phone(req.phone)
         if not client:
             raise HTTPException(status_code=404, detail="Phone number not found")
-        return {"message": "Login successful", "client": client}
+        token = create_jwt_token(client_id=client["id"])
+        return {"message": "Login successful", "client": client, "token": token}
 
     @app.post("/api/register")
     def register(req: RegisterRequest):
@@ -150,7 +181,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Failed to create user")
 
         client = get_client_by_phone(req.phone)
-        return {"message": "Registration successful", "client": client}
+        token = create_jwt_token(client_id=client["id"]) if client else ""
+        return {"message": "Registration successful", "client": client, "token": token}
 
     @app.get("/api/client/{client_id}/projects")
     def get_client_projects(client_id: int):
@@ -208,9 +240,10 @@ def create_app() -> FastAPI:
     async def chat_endpoint(req: ChatRequest, request: Request):
         session_id = req.session_id
         client_ip = request.client.host if request.client else "unknown"
+        resolved_user_id = _resolve_request_client_id(request, fallback_user_id=req.user_id)
 
         # 1. Load session state
-        state = load_state_for_session(session_id, client_ip=client_ip, user_id=req.user_id)
+        state = load_state_for_session(session_id, client_ip=client_ip, user_id=resolved_user_id)
 
         msg_data = {"role": "user", "content": req.message}
         if req.image:

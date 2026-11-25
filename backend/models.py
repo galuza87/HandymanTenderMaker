@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import List, Dict, Optional, Any, Literal
 
 # --- Classes                      ---
@@ -35,17 +35,17 @@ class ChatResponse(BaseModel):
     prompts: List[Dict[str, Any]] = []
     collected_details: Dict[str, str] = {}
 
-# Graph State 
+# Graph State
 class AgentState(BaseModel):
     messages: List[Dict[str, Any]]
     session_id: Optional[str] = None
     user_id: Optional[int] = None
-    identified_categories: List[Dict[str, Any]] = [] # e.g., [{"category_id": 1, "name": "plumbing"}]
-    prompts: List[Dict[str, Any]] = [] # e.g., [{"id": 1, "category": "plumbing", "prompt_text": "fix pipe"}]
+    identified_categories: List[Dict[str, Any]] = []
+    prompts: List[Dict[str, Any]] = []
     collected_details: Dict[str, str] = {}
     client_info: Dict[str, str] = {}
     confirmed_job_description: Optional[str] = None
-    next_step: str = "determine_number_of_subtasks" # Start at determine_number_of_subtasks
+    next_step: str = "determine_number_of_subtasks"
     ip_address: Optional[str] = None
     CategorizerDecision: Optional[CategorizerDecisionClass] = None
     project_id: Optional[int] = None
@@ -54,7 +54,7 @@ class AgentState(BaseModel):
     has_fetched_past_feedback: bool = False
 
 
-# --- Agent Testing Endpoint Models ---
+# --- Version-Agnostic Agent Testing Endpoint Models ---
 OutcomeType = Literal[
     "generate_document",
     "request_hitl",
@@ -72,8 +72,8 @@ class ExpectedToolCall(BaseModel):
 class ExpectedOutcome(BaseModel):
     """Action-focused gold standard assertion for a test turn.
 
-    Evaluates only the action taken by the agent (outcome_type, tool calls,
-    and node/state transitions) rather than free-text wording.
+    Evaluates only the action/step taken by the agent (outcome_type, tool calls,
+    and optional state fields) rather than free-text wording.
     """
     outcome_type: OutcomeType
     expected_tools: Optional[List[ExpectedToolCall]] = None
@@ -87,12 +87,68 @@ class StateTestOptions(BaseModel):
 
 
 class StateTestRequest(BaseModel):
-    """Request payload for POST /api/v1/tests/process-state."""
+    """Version-agnostic request payload for POST /api/{version}/tests/process-state.
+
+    Client identification is performed via request headers (`jwt` / `Authorization`
+    paired with `X-Test-Api-Key` in test mode, or a signed JWT in normal mode),
+    so the body only requires conversation `messages`:
+        {
+          "messages": [{"role": "user", "content": "hello"}],
+          "expected_step": "ask_additional_info"
+        }
+    """
     test_id: Optional[str] = None
-    simulated_user_id: int
-    state: AgentState
+    client_id: Optional[int] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    expected_step: Optional[OutcomeType] = None
+    expected_tools: Optional[List[ExpectedToolCall]] = None
+    dry_run: Optional[bool] = None
+    session_id: Optional[str] = None
+
+    # Optional backward-compatible nested fields
+    state: Optional[AgentState] = None
     expected_outcome: Optional[ExpectedOutcome] = None
     options: Optional[StateTestOptions] = None
+
+    @model_validator(mode="after")
+    def validate_conversation_input(self) -> "StateTestRequest":
+        """Ensure either flat `messages` or nested `state` is provided."""
+        if self.messages is None and self.state is None:
+            raise ValueError("Provide conversation 'messages' (or 'state.messages') in the request.")
+        return self
+
+    def resolve_state(self) -> AgentState:
+        """Build an AgentState from flat `messages` or return a deep copy of `state`."""
+        if self.state is not None:
+            resolved = self.state.model_copy(deep=True)
+            if self.messages is not None:
+                resolved.messages = list(self.messages)
+            if self.session_id is not None:
+                resolved.session_id = self.session_id
+            return resolved
+        return AgentState(
+            messages=list(self.messages or []),
+            session_id=self.session_id or self.test_id or "test-session",
+        )
+
+    def resolve_expected_outcome(self) -> Optional[ExpectedOutcome]:
+        """Resolve flat `expected_step` / `expected_tools` or nested `expected_outcome`."""
+        if self.expected_outcome is not None:
+            return self.expected_outcome
+        if self.expected_step is not None:
+            return ExpectedOutcome(
+                outcome_type=self.expected_step,
+                expected_tools=self.expected_tools,
+            )
+        return None
+
+    def resolve_dry_run(self) -> bool:
+        """Return the effective dry_run flag (defaults to True)."""
+        if self.dry_run is not None:
+            return self.dry_run
+        if self.options is not None:
+            return self.options.dry_run
+        return True
 
 
 class EvaluationResult(BaseModel):
@@ -113,27 +169,47 @@ class TurnSummary(BaseModel):
 
 
 class StateTestResponse(BaseModel):
-    """Response payload for POST /api/v1/tests/process-state."""
+    """Version-agnostic response payload for POST /api/{version}/tests/process-state."""
     test_id: Optional[str] = None
+    version: str = "v1"
+    client_id: int
+    step: OutcomeType
+    expected_step: Optional[OutcomeType] = None
+    is_step_correct: Optional[bool] = None
     success: bool
+    reply: Optional[str] = None
     execution_time_ms: float
-    state: AgentState
+    messages: List[Dict[str, Any]] = []
     turn_summary: TurnSummary
     evaluation: Optional[EvaluationResult] = None
+    state: AgentState
 
 
 class BatchTestJobRequest(BaseModel):
-    """Request payload for POST /api/v1/tests/jobs."""
+    """Request payload for POST /api/{version}/tests/jobs.
+
+    Can run many concurrent requests at once by:
+    1. Loading single test case files from `backend/tests/agent_cases/` (all of them,
+       or filtered by `test_cases`) and repeating them up to `total_requests`.
+    2. Repeating an inline single conversation (`messages` + `expected_step`) `total_requests` times.
+    3. Executing an explicit `requests` list.
+    """
     job_name: Optional[str] = None
     concurrency: int = 1
+    total_requests: Optional[int] = None
     fail_fast: bool = False
-    requests: List[StateTestRequest]
+    test_cases: Optional[List[str]] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    expected_step: Optional[OutcomeType] = None
+    expected_tools: Optional[List[ExpectedToolCall]] = None
+    requests: Optional[List[StateTestRequest]] = None
 
 
 class BatchTestJobResponse(BaseModel):
-    """Summary response for POST /api/v1/tests/jobs and GET /api/v1/tests/jobs/{job_id}."""
+    """Summary response for POST /api/{version}/tests/jobs and GET /api/{version}/tests/jobs/{job_id}."""
     job_id: str
     job_name: Optional[str] = None
+    version: Optional[str] = None
     status: Literal["PASSED", "FAILED"]
     total_requests: int
     passed: int

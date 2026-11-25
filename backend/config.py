@@ -93,5 +93,5 @@ REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60.0"))
 # --- Agent Testing Endpoints Configuration ---
 ENABLE_TEST_ENDPOINTS = os.getenv("ENABLE_TEST_ENDPOINTS", "true").lower() == "true"
 TEST_API_KEY = os.getenv("TEST_API_KEY", "dev-test-api-key")
-MAX_ACTIVE_REQUESTS = int(os.getenv("MAX_ACTIVE_REQUESTS", "10"))
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret-key")
 

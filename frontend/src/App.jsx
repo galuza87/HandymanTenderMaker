@@ -7,6 +7,7 @@ import { WaitStatusBanner } from './components/WaitStatusBanner'
 function App() {
   // Auth States
   const [loggedInClient, setLoggedInClient] = useState(null);
+  const [authToken, setAuthToken] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editData, setEditData] = useState({});
@@ -158,6 +159,7 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         setLoggedInClient(data.client);
+        setAuthToken(data.token || '');
       } else if (res.status === 404) {
         setRegData(prev => ({ ...prev, phone: loginPhone }));
         setIsRegistering(true);
@@ -184,6 +186,7 @@ function App() {
       if (res.ok) {
         const data = await res.json();
         setLoggedInClient(data.client);
+        setAuthToken(data.token || '');
         setIsRegistering(false);
       } else {
         const err = await res.json();
@@ -249,11 +252,15 @@ function App() {
     startWait();
 
     try {
+      const chatHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (authToken) {
+        chatHeaders['Authorization'] = `Bearer ${authToken}`;
+      }
       const response = await fetch('/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: chatHeaders,
         body: JSON.stringify({
           message: userMessage,
           session_id: sessionId,
